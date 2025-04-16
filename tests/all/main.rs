@@ -49,6 +49,7 @@ mod types;
 mod wait_notify;
 mod wasi_testsuite;
 mod winch_engine_features;
+mod rwasm;
 
 /// A helper to compile a module in a new store with reference types enabled.
 pub(crate) fn ref_types_module(

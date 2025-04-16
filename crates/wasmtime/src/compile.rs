@@ -35,12 +35,7 @@ use std::{
 
 #[cfg(feature = "component-model")]
 use wasmtime_environ::component::Translator;
-use wasmtime_environ::{
-    BuiltinFunctionIndex, CompiledFunctionInfo, CompiledModuleInfo, Compiler, DefinedFuncIndex,
-    FinishedObject, FunctionBodyData, ModuleEnvironment, ModuleInternedTypeIndex,
-    ModuleTranslation, ModuleTypes, ModuleTypesBuilder, ObjectKind, PrimaryMap, RelocationTarget,
-    StaticModuleIndex, WasmFunctionInfo,
-};
+use wasmtime_environ::{BuiltinFunctionIndex, CompiledFunctionInfo, CompiledModuleInfo, Compiler, DefinedFuncIndex, FinishedObject, FunctionBodyData, Module, ModuleEnvironment, ModuleInternedTypeIndex, ModuleTranslation, ModuleTypes, ModuleTypesBuilder, ObjectKind, PrimaryMap, RelocationTarget, StaticModuleIndex, WasmFunctionInfo};
 
 mod code_builder;
 pub use self::code_builder::{CodeBuilder, CodeHint, HashedEngineCompileEnv};
@@ -66,6 +61,19 @@ pub(crate) fn build_artifacts<T: FinishedObject>(
     dwarf_package: Option<&[u8]>,
     obj_state: &T::State,
 ) -> Result<(T, Option<(CompiledModuleInfo, ModuleTypes)>)> {
+    if wasm.len() >= 2 && wasm[0] == 0xef && wasm[1] == 0x52 {
+        build_rwasm_artifacts::<T>(engine, wasm, dwarf_package, obj_state)
+    } else {
+        build_wasm_artifacts::<T>(engine, wasm, dwarf_package, obj_state)
+    }
+}
+
+pub(crate) fn build_wasm_artifacts<T: FinishedObject>(
+    engine: &Engine,
+    wasm: &[u8],
+    dwarf_package: Option<&[u8]>,
+    obj_state: &T::State,
+) -> Result<(T, Option<(CompiledModuleInfo, ModuleTypes)>)> {
     let tunables = engine.tunables();
 
     // First a `ModuleEnvironment` is created which records type information
@@ -76,6 +84,64 @@ pub(crate) fn build_artifacts<T: FinishedObject>(
     let mut validator = wasmparser::Validator::new_with_features(engine.features());
     parser.set_features(*validator.features());
     let mut types = ModuleTypesBuilder::new(&validator);
+    let mut translation = ModuleEnvironment::new(tunables, &mut validator, &mut types)
+        .translate(parser, wasm)
+        .context("failed to parse WebAssembly module")?;
+    let functions = mem::take(&mut translation.function_body_inputs);
+
+    let compile_inputs = CompileInputs::for_module(&types, &translation, functions);
+    let unlinked_compile_outputs = compile_inputs.compile(engine)?;
+    let (compiled_funcs, function_indices) = unlinked_compile_outputs.pre_link();
+
+    // Emplace all compiled functions into the object file with any other
+    // sections associated with code as well.
+    let mut object = engine.compiler().object(ObjectKind::Module)?;
+    // Insert `Engine` and type-level information into the compiled
+    // artifact so if this module is deserialized later it contains all
+    // information necessary.
+    //
+    // Note that `append_compiler_info` and `append_types` here in theory
+    // can both be skipped if this module will never get serialized.
+    // They're only used during deserialization and not during runtime for
+    // the module itself. Currently there's no need for that, however, so
+    // it's left as an exercise for later.
+    engine.append_compiler_info(&mut object);
+    engine.append_bti(&mut object);
+
+    let (mut object, compilation_artifacts) = function_indices.link_and_append_code(
+        &types,
+        object,
+        engine,
+        compiled_funcs,
+        std::iter::once(translation).collect(),
+        dwarf_package,
+    )?;
+
+    let info = compilation_artifacts.unwrap_as_module_info();
+    let types = types.finish();
+    object.serialize_info(&(&info, &types));
+    let result = T::finish_object(object, obj_state)?;
+
+    Ok((result, Some((info, types))))
+}
+
+pub(crate) fn build_rwasm_artifacts<T: FinishedObject>(
+    engine: &Engine,
+    wasm: &[u8],
+    dwarf_package: Option<&[u8]>,
+    obj_state: &T::State,
+) -> Result<(T, Option<(CompiledModuleInfo, ModuleTypes)>)> {
+    let tunables = engine.tunables();
+    
+    let mut types = ModuleTypesBuilder::new(&validator);
+    
+    let module = Module::default();
+    let translation = ModuleTranslation {
+        module,
+        wasm,
+        ..Default::default()
+    };
+    
     let mut translation = ModuleEnvironment::new(tunables, &mut validator, &mut types)
         .translate(parser, wasm)
         .context("failed to parse WebAssembly module")?;

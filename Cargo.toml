@@ -81,6 +81,9 @@ hyper = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
 http-body-util = { workspace = true, optional = true }
 
+fluentbase-types = { path = "../fluentbase/crates/types" }
+rwasm = { path = "../rwasm/rwasm" }
+
 [target.'cfg(unix)'.dependencies]
 rustix = { workspace = true, features = ["mm", "param", "process"] }
 
