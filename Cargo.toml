@@ -81,9 +81,6 @@ hyper = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
 http-body-util = { workspace = true, optional = true }
 
-fluentbase-types = { path = "../fluentbase/crates/types" }
-rwasm = { path = "../rwasm/rwasm" }
-
 [target.'cfg(unix)'.dependencies]
 rustix = { workspace = true, features = ["mm", "param", "process"] }
 
@@ -128,6 +125,8 @@ pulley-interpreter = { workspace = true, features = ["disas"] }
 wasmtime-wast-util = { path = 'crates/wast-util' }
 wasm-encoder = { workspace = true }
 cranelift-native = { workspace = true }
+rwasm-executor = {workspace = true}
+fluentbase-types = {workspace = true}
 
 [target.'cfg(windows)'.dev-dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Memory"] }
@@ -223,6 +222,9 @@ unnecessary_cast = 'warn'
 allow_attributes_without_reason = 'warn'
 
 [workspace.dependencies]
+fluentbase-types = { path = "../fluentbase/crates/types" }
+rwasm-executor = { path = "../rwasm/executor" }
+
 arbitrary = { version = "1.4.0" }
 wasmtime-wmemcheck = { path = "crates/wmemcheck", version = "=31.0.0" }
 wasmtime = { path = "crates/wasmtime", version = "31.0.0", default-features = false }

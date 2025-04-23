@@ -1,7 +1,4 @@
-use crate::{
-    abi::{wasm_sig, ABI},
-    codegen::{BuiltinFunctions, CodeGen, CodeGenContext, FuncEnv, TypeConverter},
-};
+use crate::{abi::{wasm_sig, ABI}, codegen::{BuiltinFunctions, CodeGen, CodeGenContext, FuncEnv, TypeConverter}, CallingConvention};
 
 use crate::frame::{DefinedLocals, Frame};
 use crate::isa::x64::masm::MacroAssembler as X64Masm;
@@ -13,13 +10,14 @@ use crate::{
     regset::RegBitSet,
 };
 use anyhow::Result;
-use cranelift_codegen::settings::{self, Flags};
+use cranelift_codegen::settings::{self, Configurable, Flags};
 use cranelift_codegen::{isa::x64::settings as x64_settings, Final, MachBufferFinalized};
 use cranelift_codegen::{MachTextSectionBuilder, TextSectionBuilder};
 use target_lexicon::Triple;
-use wasmparser::{FuncValidator, FunctionBody, ValidatorResources};
+use wasmparser::{FuncValidator, FunctionBody, Validator, ValidatorResources};
+use cranelift_codegen::isa::x64;
 use wasmtime_cranelift::CompiledFunction;
-use wasmtime_environ::{ModuleTranslation, ModuleTypesBuilder, Tunables, VMOffsets, WasmFuncType};
+use wasmtime_environ::{ModuleTranslation, ModuleTypesBuilder, Tunables, VMOffsets, VMOffsetsFields, WasmFuncType};
 
 use self::regs::{ALL_FPR, ALL_GPR, MAX_FPR, MAX_GPR, NON_ALLOCATABLE_FPR, NON_ALLOCATABLE_GPR};
 
@@ -48,8 +46,10 @@ pub(crate) fn isa_builder(triple: Triple) -> Builder {
     )
 }
 
+
+
 /// x64 ISA.
-pub(crate) struct X64 {
+pub struct X64 {
     /// The target triple.
     triple: Triple,
     /// ISA specific flags.
@@ -66,6 +66,97 @@ impl X64 {
             shared_flags,
             triple,
         }
+    }
+
+    pub fn new2() -> Self {
+        let mut flag_builder = settings::builder();
+        flag_builder.enable("is_pic").unwrap();
+        let flags = Flags::new(flag_builder);
+        let isa_flag_builder = x64::settings::builder();
+        let isa_flags = x64::settings::Flags::new(&flags, &isa_flag_builder);
+        Self {
+            triple: Triple::host(),
+            isa_flags,
+            shared_flags: flags,
+        }
+    }
+
+    pub fn compile_rwasm_function(
+        &self,
+        rwasm_module: rwasm_executor::RwasmModule2,
+    ) -> Result<CompiledFunction> {
+        let pointer_bytes = self.pointer_bytes();
+        let vmoffsets = VMOffsets::from(VMOffsetsFields {
+            ptr: pointer_bytes,
+            num_imported_functions: 0,
+            num_imported_tables: 0,
+            num_imported_memories: 0,
+            num_imported_globals: 0,
+            num_imported_tags: 0,
+            num_defined_tables: 0,
+            num_defined_memories: 0,
+            num_owned_memories: 0,
+            num_defined_globals: 0,
+            num_defined_tags: 0,
+            num_escaped_funcs: 0,
+        });
+
+        let mut masm = X64Masm::new(
+            pointer_bytes,
+            self.shared_flags.clone(),
+            self.isa_flags.clone(),
+        )?;
+        let stack = Stack::new();
+
+        let sig = WasmFuncType::new([].into(), [].into());
+        let abi_sig = wasm_sig::<abi::X64ABI>(&sig)?;
+
+        let mut builtins   = BuiltinFunctions::new(&vmoffsets, CallingConvention::SystemV, CallingConvention::SystemV);
+
+        let translation = ModuleTranslation::default();
+        let types_builder = ModuleTypesBuilder::new(&Validator::default());
+
+        let env = FuncEnv::new(
+            &vmoffsets,
+            &translation,
+            &types_builder,
+            &mut builtins,
+            self,
+            abi::X64ABI::ptr_type(),
+        );
+        let defined_locals = DefinedLocals::default();
+        let frame = Frame::new::<abi::X64ABI>(&abi_sig, &defined_locals)?;
+        let gpr = RegBitSet::int(
+            ALL_GPR.into(),
+            NON_ALLOCATABLE_GPR.into(),
+            usize::try_from(MAX_GPR).unwrap(),
+        );
+        let fpr = RegBitSet::float(
+            ALL_FPR.into(),
+            NON_ALLOCATABLE_FPR.into(),
+            usize::try_from(MAX_FPR).unwrap(),
+        );
+
+        let regalloc = RegAlloc::from(gpr, fpr);
+        let codegen_context = CodeGenContext::new(regalloc, stack, frame, &vmoffsets);
+        let tunables = Tunables::default_host();
+        let codegen = CodeGen::new(&tunables, &mut masm, codegen_context, env, abi_sig);
+
+        let mut body_codegen = codegen.emit_prologue()?;
+
+        //
+        // let mut ip = InstructionPtr::new(rwasm_module.code_section.as_ptr(), rwasm_module.instr_data.as_ptr());
+
+
+        // body_codegen.emit(&mut body, validator)?;
+        let base = body_codegen.source_location.base;
+
+        let names = body_codegen.env.take_name_map();
+        Ok(CompiledFunction::new(
+            masm.finalize(base)?,
+            names,
+            self.function_alignment(),
+        ))
     }
 }
 

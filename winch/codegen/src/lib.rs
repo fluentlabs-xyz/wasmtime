@@ -9,11 +9,11 @@
 
 mod abi;
 pub use codegen::{BuiltinFunctions, FuncEnv};
-mod codegen;
+pub mod codegen;
 mod frame;
 pub mod isa;
 pub use isa::*;
-mod masm;
+pub mod masm;
 mod regalloc;
 mod regset;
 mod stack;

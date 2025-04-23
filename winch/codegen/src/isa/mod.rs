@@ -15,7 +15,7 @@ use wasmtime_cranelift::CompiledFunction;
 use wasmtime_environ::{ModuleTranslation, ModuleTypesBuilder, Tunables, WasmFuncType};
 
 #[cfg(feature = "x64")]
-pub(crate) mod x64;
+pub mod x64;
 
 #[cfg(feature = "arm64")]
 pub(crate) mod aarch64;

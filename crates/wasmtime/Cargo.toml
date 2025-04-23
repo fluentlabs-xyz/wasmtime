@@ -64,6 +64,8 @@ hashbrown = { workspace = true, features = ["default-hasher"] }
 bitflags = { workspace = true }
 futures = { workspace = true, features = ["alloc"], optional = true }
 
+rwasm-executor = {workspace = true}
+
 [target.'cfg(target_os = "windows")'.dependencies.windows-sys]
 workspace = true
 optional = true
@@ -145,6 +147,7 @@ default = [
   'component-model',
   'threads',
   'std',
+  'all-arch'
 ]
 
 # An on-by-default feature enabling runtime compilation of WebAssembly modules

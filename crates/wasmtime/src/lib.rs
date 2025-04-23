@@ -393,6 +393,8 @@ use sync_std as sync;
 
 #[cfg_attr(feature = "std", allow(dead_code))]
 mod sync_nostd;
+mod rwasm;
+
 #[cfg(not(feature = "std"))]
 use sync_nostd as sync;
 
