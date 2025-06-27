@@ -133,6 +133,85 @@ pub fn translate_operator(
 
     // This big match treats all Wasm code operators.
     log::trace!("Translating Wasm opcode: {op:?}");
+
+    #[cfg(feature = "disable-fpu")]
+    match op {
+        Operator::F32Load { .. }
+        | Operator::F64Load  { .. }
+        | Operator::F32Store  { .. }
+        | Operator::F64Store  { .. }
+        | Operator::F32Eq
+        | Operator::F32Ne
+        | Operator::F32Lt
+        | Operator::F32Gt
+        | Operator::F32Le
+        | Operator::F32Ge
+        | Operator::F64Eq
+        | Operator::F64Ne
+        | Operator::F64Lt
+        | Operator::F64Gt
+        | Operator::F64Le
+        | Operator::F64Ge
+        | Operator::F32Abs
+        | Operator::F32Neg
+        | Operator::F32Ceil
+        | Operator::F32Floor
+        | Operator::F32Trunc
+        | Operator::F32Nearest
+        | Operator::F32Sqrt
+        | Operator::F32Add
+        | Operator::F32Sub
+        | Operator::F32Mul
+        | Operator::F32Div
+        | Operator::F32Min
+        | Operator::F32Max
+        | Operator::F32Copysign
+        | Operator::F64Abs
+        | Operator::F64Neg
+        | Operator::F64Ceil
+        | Operator::F64Floor
+        | Operator::F64Trunc
+        | Operator::F64Nearest
+        | Operator::F64Sqrt
+        | Operator::F64Add
+        | Operator::F64Sub
+        | Operator::F64Mul
+        | Operator::F64Div
+        | Operator::F64Min
+        | Operator::F64Max
+        | Operator::F64Copysign
+        | Operator::I32TruncF32S
+        | Operator::I32TruncF32U
+        | Operator::I32TruncF64S
+        | Operator::I32TruncF64U
+        | Operator::I64TruncF32S
+        | Operator::I64TruncF32U
+        | Operator::I64TruncF64S
+        | Operator::I64TruncF64U
+        | Operator::F32ConvertI32S
+        | Operator::F32ConvertI32U
+        | Operator::F32ConvertI64S
+        | Operator::F32ConvertI64U
+        | Operator::F32DemoteF64
+        | Operator::F64ConvertI32S
+        | Operator::F64ConvertI32U
+        | Operator::F64ConvertI64S
+        | Operator::F64ConvertI64U
+        | Operator::F64PromoteF32
+        | Operator::I32TruncSatF32S
+        | Operator::I32TruncSatF32U
+        | Operator::I32TruncSatF64S
+        | Operator::I32TruncSatF64U
+        | Operator::I64TruncSatF32S
+        | Operator::I64TruncSatF32U
+        | Operator::I64TruncSatF64S
+        | Operator::I64TruncSatF64U => {
+            environ.trap(builder, crate::TRAP_DISABLED_OPCODE);
+            state.reachable = false;
+        }
+        _ => {}
+    }
+
     match op {
         /********************************** Locals ****************************************
          *  `get_local` and `set_local` are treated as non-SSA variables and will completely

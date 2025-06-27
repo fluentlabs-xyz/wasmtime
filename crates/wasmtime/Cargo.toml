@@ -387,3 +387,5 @@ component-model-async = [
   "wasmtime-component-macro?/component-model-async",
   "dep:futures"
 ]
+
+disable-fpu  = ["wasmtime-cranelift/disable-fpu"]
