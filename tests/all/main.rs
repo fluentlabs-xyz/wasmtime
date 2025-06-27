@@ -12,7 +12,6 @@ mod coredump;
 mod custom_code_memory;
 mod debug;
 mod defaults;
-mod disable_fpu;
 mod epoch_interruption;
 mod externals;
 mod fuel;

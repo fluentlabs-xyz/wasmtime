@@ -134,7 +134,7 @@ pub fn translate_operator(
     // This big match treats all Wasm code operators.
     log::trace!("Translating Wasm opcode: {op:?}");
 
-    #[cfg(feature = "fluent-disable-fpu")]
+    #[cfg(feature = "disable-fpu")]
     match op {
         Operator::F32Load { .. }
         | Operator::F64Load  { .. }
