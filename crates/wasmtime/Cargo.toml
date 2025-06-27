@@ -388,4 +388,4 @@ component-model-async = [
   "dep:futures"
 ]
 
-fluent-disable-fpu = ["wasmtime-cranelift/fluent-disable-fpu"]
+disable-fpu  = ["wasmtime-cranelift/disable-fpu"]
