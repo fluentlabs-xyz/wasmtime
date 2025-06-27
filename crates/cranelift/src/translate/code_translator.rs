@@ -208,6 +208,7 @@ pub fn translate_operator(
         | Operator::I64TruncSatF64U => {
             environ.trap(builder, crate::TRAP_DISABLED_OPCODE);
             state.reachable = false;
+            return Ok(());
         }
         _ => {}
     }
