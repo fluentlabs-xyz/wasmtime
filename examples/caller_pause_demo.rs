@@ -70,9 +70,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                    i, frame.function_name.as_deref().unwrap_or("<unknown>"),
                                    frame.instruction_offset);
                         }
-                        if let Some(func_info) = &paused_state.current_function {
-                            println!("Current function: {:?}", func_info.name.as_deref().unwrap_or("<unknown>"));
-                        }
                     }
                     None => {
                         println!("⚠️  No paused state available (get_paused_state returned None)");

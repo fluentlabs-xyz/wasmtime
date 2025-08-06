@@ -1778,24 +1778,8 @@ impl StoreOpaque {
             pc,
             fp,
             call_stack: self.capture_call_stack(),
-            current_function: self.capture_current_function(),
-            memory_info: self.capture_memory_info(),
-            globals_info: self.capture_globals_info(),
             fuel_remaining: self.get_fuel().ok(),
         }
-    }
-
-    /// Capture information about the current function being executed
-    fn capture_current_function(&self) -> Option<ExecutionFunctionInfo> {
-        // For host function traps, we don't have a current WASM function
-        // But we could capture the function that called the host function
-        // This is a simplified implementation
-        None
-    }
-
-    #[cfg(not(has_host_compiler_backend))]
-    fn capture_jit_context(&mut self) -> Option<JitContext> {
-        None
     }
 
     /// Clear the paused execution state.
@@ -1866,7 +1850,6 @@ impl StoreOpaque {
             state
         } else {
             // Create a simple state if no pause state exists
-            // TODO: Should work w/o this for now
             self.create_paused_state(1, 1) // Use non-zero to avoid assertions
         };
 
@@ -2638,12 +2621,6 @@ pub struct PausedExecutionState {
     pub fp: usize,
     /// WebAssembly call stack at pause time
     pub call_stack: Vec<ExecutionFrameInfo>,
-    /// Current function being executed (if available)
-    pub current_function: Option<ExecutionFunctionInfo>,
-    /// Memory state information
-    pub memory_info: Vec<ExecutionMemoryInfo>,
-    /// Global variables state
-    pub globals_info: Vec<ExecutionGlobalInfo>,
     /// Fuel remaining at pause time
     pub fuel_remaining: Option<u64>,
 }
@@ -2725,42 +2702,41 @@ impl ExecutionHandle {
         if store.0.inner.id() != self.store_id {
             panic!("Incorrect store id")
         }
-
-        // Check if we have valid paused state to resume from
         let pc = self.paused_state.pc;
         let fp = self.paused_state.fp;
-
-        if pc == 0 && fp == 0 {
-            panic!("No valid pause state to resume from")
-        }
-
-        log::trace!("Resuming execution from PC=0x{:x}, FP=0x{:x}", pc, fp);
-
-        // Restore fuel if it was captured
         if let Some(fuel) = self.remaining_fuel {
             let _ = store.set_fuel(fuel);
             log::trace!("Restored fuel to {}", fuel);
         }
+        println!("Resume from pc=0x{:x}, fp=0x{:x}", pc, fp);
 
-        // Mark the store as in a resume state
-        // This allows the trap handlers to know we're resuming and can provide
-        // different behavior (e.g., skip the pause trap and continue)
         unsafe {
             let vm_store_ptr = store.0.inner.vm_store_context_ptr().as_ptr();
             *(*vm_store_ptr).paused_pc.get() = pc;
             *(*vm_store_ptr).paused_fp.get() = fp;
         }
-
-        log::trace!("Set resume state in VMStoreContext");
-
-        // Clear the paused state since we're resuming
         store.0.clear_paused_state();
 
-        log::trace!("Resume complete - simulating expected continuation");
-
-        // TODO clean post state
-
-        Ok(vec![crate::Val::I32(300)])
+        let jump_result = unsafe {
+            let pc_function: unsafe extern "C" fn() -> u32 = std::mem::transmute(pc);
+            // Perform the jump by calling the function pointer
+            // This restore execution at the saved PC
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let result_value = pc_function();
+                log::trace!("PC jump executed, returned: {}", result_value);
+                result_value
+            }))
+        };
+        match jump_result {
+            Ok(result_value) => {
+                log::trace!("Native jump success: {}", result_value);
+                Ok(vec![crate::Val::I32(result_value as i32)])
+            }
+            Err(_) => {
+                log::trace!("Native jump fail");
+                panic!("Native jump execution failed")
+            }
+        }
     }
 
     /// Create an ExecutionHandle for testing purposes
