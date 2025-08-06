@@ -423,6 +423,11 @@ pub use anyhow::{Error, Result};
 #[cfg(feature = "reexport-wasmparser")]
 pub use wasmparser;
 
+pub use crate::runtime::store::{
+    ExecutionHandle, PausedExecutionState, Store, StoreContext, StoreContextMut,
+    ExecutionFrameInfo, ExecutionFunctionInfo, ExecutionMemoryInfo, ExecutionGlobalInfo,
+};
+
 fn _assert_send_and_sync<T: Send + Sync>() {}
 
 fn _assertions_lib() {

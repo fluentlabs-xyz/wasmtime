@@ -171,7 +171,7 @@ impl InterpreterRef<'_> {
         //
         // See more comments in `trap` below about how this isn't actually
         // correct as it's not saving all callee-save state.
-        let setjmp = setjmp(vm);
+        let setjmp = setjmp(vm); // TODO: Could we use it?
 
         let old_lr = vm.call_start(&args);
 
@@ -453,6 +453,7 @@ fn trap(vm: &mut Vm, pc: NonNull<u8>, kind: Option<TrapKind>, setjmp: Setjmp) {
                     TrapTest::HandledByEmbedder => unreachable!(),
 
                     // Trap was handled, yay! We don't use `jmp_buf`.
+                    TrapTest::TrapNoUnwind { .. } => {}
                     TrapTest::Trap { .. } => {}
                 }
             }

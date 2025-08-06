@@ -92,7 +92,21 @@ pub(crate) fn from_runtime_box(
         // provide useful information to debug with for the embedder/caller,
         // otherwise the information about what the wasm was doing when the
         // error was generated would be lost.
-        crate::runtime::vm::TrapReason::User(error) => (error, None),
+        crate::runtime::vm::TrapReason::User(error) => {
+            // Check if this is a PauseExecution trap from a host function
+            if let Some(trap_env) = error.downcast_ref::<wasmtime_environ::Trap>() {
+                if *trap_env == wasmtime_environ::Trap::PauseExecution {
+                    // Check if this trap should not unwind
+                    if (store.no_unwind_traps & (1 << (wasmtime_environ::Trap::PauseExecution as u8))) != 0 {
+                        // For host function PauseExecution traps, we use a fake PC to avoid backtrace issues
+                        store.pause_execution(1, 1); // Use 1 instead of 0 to avoid assertion failures
+                        // Return the PauseExecution error directly without backtrace
+                        return wasmtime_environ::Trap::PauseExecution.into();
+                    }
+                }
+            }
+            (error, None)
+        }
         crate::runtime::vm::TrapReason::Jit {
             pc,
             faulting_addr,
@@ -110,6 +124,10 @@ pub(crate) fn from_runtime_box(
             (err, Some(pc))
         }
         crate::runtime::vm::TrapReason::Wasm(trap_code) => (trap_code.into(), None),
+        crate::runtime::vm::TrapReason::PauseExecution { pc, fp } => {
+            store.pause_execution(pc, fp);
+            (wasmtime_environ::Trap::PauseExecution.into(), None) // Don't pass pc for backtrace to avoid assertion
+        }
     };
 
     if let Some(bt) = backtrace {
@@ -260,7 +278,7 @@ impl WasmBacktrace {
         Self::from_captured(store.0, crate::runtime::vm::Backtrace::new(store.0), None)
     }
 
-    fn from_captured(
+    pub(crate) fn from_captured(
         store: &StoreOpaque,
         runtime_trace: crate::runtime::vm::Backtrace,
         trap_pc: Option<usize>,

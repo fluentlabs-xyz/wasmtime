@@ -121,6 +121,9 @@ define_tunables! {
 
         /// Whether CoW images might be used to initialize linear memories.
         pub memory_init_cow: bool,
+
+        /// Whether deterministic interrupts are enabled
+        pub deterministic_interrupts: bool,
     }
 
     pub struct ConfigTunables {
@@ -191,6 +194,7 @@ impl Tunables {
             winch_callable: false,
             signals_based_traps: false,
             memory_init_cow: true,
+            deterministic_interrupts: false,
         }
     }
 

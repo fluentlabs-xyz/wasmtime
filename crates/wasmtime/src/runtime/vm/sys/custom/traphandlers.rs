@@ -58,6 +58,12 @@ extern "C" fn handle_trap(pc: usize, fp: usize, has_faulting_addr: bool, faultin
         match test {
             TrapTest::NotWasm => {}
             TrapTest::HandledByEmbedder => unreachable!(),
+            TrapTest::TrapNoUnwind { trap_type, pc, .. } => {
+                // Note: Custom platforms need to implement instruction skipping
+                // in their embedding layer. We can't do it generically here.
+                // The pc and trap_type are provided for the embedder to handle.
+                let _ = (trap_type, pc);
+            }
             TrapTest::Trap { jmp_buf } => unsafe { wasmtime_longjmp(jmp_buf) },
         }
     })

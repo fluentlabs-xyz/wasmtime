@@ -2,7 +2,7 @@ use crate::prelude::*;
 use crate::runtime::Uninhabited;
 use crate::runtime::vm::{
     ExportFunction, InterpreterRef, SendSyncPtr, StoreBox, VMArrayCallHostFuncContext, VMContext,
-    VMFuncRef, VMFunctionImport, VMOpaqueContext, VMStoreContext,
+    VMOpaqueContext, VMStoreContext, VMFuncRef, VMFunctionImport,
 };
 use crate::store::{AutoAssertNoGc, StoreId, StoreOpaque};
 use crate::type_registry::RegisteredType;
@@ -2212,6 +2212,46 @@ impl<T> Caller<'_, T> {
     /// [`Store::fuel_async_yield_interval`](crate::Store::fuel_async_yield_interval)
     pub fn fuel_async_yield_interval(&mut self, interval: Option<u64>) -> Result<()> {
         self.store.fuel_async_yield_interval(interval)
+    }
+
+    /// Pause execution by triggering a PauseExecution trap.
+    pub fn pause_execution(&mut self) -> Result<(), crate::Trap> {
+        log::trace!("Capturing call stack from Caller::pause_execution");
+        let call_stack = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let wasm_backtrace = crate::WasmBacktrace::force_capture(&self.store);
+            log::trace!("WasmBacktrace captured {} frames", wasm_backtrace.frames().len());
+            let mut call_stack = Vec::new();
+            for (i, frame) in wasm_backtrace.frames().iter().enumerate() {
+                let function_name = frame.func_name().map(|s| s.to_string());
+                let module_name = frame.module().name().map(|s| s.to_string());
+                let instruction_offset = frame.func_offset().unwrap_or(0);
+
+                log::trace!("Frame {}: func={:?}, module={:?}, offset=0x{:x}",
+                         i, function_name, module_name, instruction_offset);
+
+                call_stack.push(crate::ExecutionFrameInfo {
+                    function_name,
+                    module_name,
+                    instruction_offset,
+                });
+            }
+            call_stack
+        })) {
+            Ok(stack) => {
+                log::trace!("Successfully captured {} frames", stack.len());
+                stack
+            }
+            Err(_) => {
+                log::trace!("Failed to capture call stack from host function context - using fallback");
+                vec![crate::ExecutionFrameInfo {
+                    function_name: Some("<host_function>".to_string()),
+                    module_name: Some("<host>".to_string()),
+                    instruction_offset: 0,
+                }]
+            }
+        };
+        self.store.set_captured_call_stack(call_stack);
+        Err(wasmtime_environ::Trap::PauseExecution.into())
     }
 }
 

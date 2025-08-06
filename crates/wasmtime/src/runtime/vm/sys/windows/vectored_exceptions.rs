@@ -115,6 +115,9 @@ unsafe extern "system" fn exception_handler(exception_info: *mut EXCEPTION_POINT
         match info.test_if_trap(regs, faulting_addr, |handler| handler(exception_info)) {
             TrapTest::NotWasm => ExceptionContinueSearch,
             TrapTest::HandledByEmbedder => ExceptionContinueExecution,
+            TrapTest::TrapNoUnwind { trap_type, pc, .. } => {
+                ExceptionContinueExecution
+            }
             TrapTest::Trap { jmp_buf } => super::traphandlers::wasmtime_longjmp(jmp_buf),
         }
     })

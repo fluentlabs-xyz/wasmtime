@@ -2582,6 +2582,13 @@ impl Config {
         self.tunables.signals_based_traps = Some(enable);
         self
     }
+
+    /// Enables or disables deterministic interrupts.
+    /// When enabled, PauseExecution traps will be inserted at deterministic points.
+    pub fn deterministic_interrupts(&mut self, enable: bool) -> &mut Self {
+        self.tunables.deterministic_interrupts = Some(enable);
+        self
+    }
 }
 
 impl Default for Config {

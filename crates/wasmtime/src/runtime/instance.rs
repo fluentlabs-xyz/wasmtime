@@ -578,6 +578,14 @@ impl Instance {
             .into_iter()
             .map(|(i, m)| (i, unsafe { Memory::from_wasmtime_memory(m, store) }))
     }
+
+    /// Get an execution handle if execution is currently paused.
+    pub fn get_execution_handle(&self) -> Option<crate::ExecutionHandle> {
+        // TODO: Check if this instance has paused execution and return handle
+        // For now, always return None since proper implementation requires 
+        // store context which is not available here
+        None
+    }
 }
 
 pub(crate) struct OwnedImports {

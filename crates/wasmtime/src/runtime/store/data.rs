@@ -171,11 +171,13 @@ impl StoreInstanceId {
         StoreInstanceId { store_id, instance }
     }
 
+    /// Assert that this instance ID belongs to the given store.
     #[inline]
     pub fn assert_belongs_to(&self, store: StoreId) {
         self.store_id.assert_belongs_to(store)
     }
 
+    /// Returns the store ID that this instance belongs to.
     #[inline]
     pub fn store_id(&self) -> StoreId {
         self.store_id

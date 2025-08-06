@@ -170,10 +170,16 @@ pub trait PtrSize {
         0
     }
 
+    /// Return the offset of the `no_unwind_traps` field of `VMStoreContext`
+    #[inline]
+    fn vmstore_context_no_unwind_traps(&self) -> u8 {
+        self.vmstore_context_fuel_consumed() + 8
+    }
+
     /// Return the offset of the `epoch_deadline` field of `VMStoreContext`
     #[inline]
     fn vmstore_context_epoch_deadline(&self) -> u8 {
-        self.vmstore_context_fuel_consumed() + 8
+        self.vmstore_context_no_unwind_traps() + 8
     }
 
     /// Return the offset of the `stack_limit` field of `VMStoreContext`

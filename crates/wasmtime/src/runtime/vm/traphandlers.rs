@@ -20,7 +20,7 @@ use crate::runtime::store::{ExecutorRef, StoreOpaque};
 use crate::runtime::vm::sys::traphandlers;
 use crate::runtime::vm::{InterpreterRef, VMContext, VMStoreContext, f32x4, f64x2, i8x16};
 use crate::{EntryStoreContext, prelude::*};
-use crate::{StoreContextMut, WasmBacktrace};
+use crate::StoreContextMut;
 use core::cell::Cell;
 use core::num::NonZeroU32;
 use core::ops::Range;
@@ -54,6 +54,8 @@ pub(crate) enum TrapTest {
         #[cfg(has_host_compiler_backend)]
         jmp_buf: *const u8,
     },
+    /// The execution should resume without unwinding.
+    TrapNoUnwind,
 }
 
 fn lazy_per_thread_init() {
@@ -347,6 +349,15 @@ pub enum TrapReason {
 
     /// A trap raised from a wasm libcall
     Wasm(wasmtime_environ::Trap),
+
+    /// A pause execution trap that can be resumed.
+    /// This stores the execution state needed to resume execution.
+    PauseExecution {
+        /// The program counter where execution was paused.
+        pc: usize,
+        /// The frame pointer when execution was paused.
+        fp: usize,
+    },
 }
 
 impl From<Error> for TrapReason {
@@ -461,6 +472,7 @@ mod call_thread_state {
         pub(super) capture_backtrace: bool,
         #[cfg(feature = "coredump")]
         pub(super) capture_coredump: bool,
+        pub(super) no_unwind_traps: u64,
 
         pub(crate) vm_store_context: NonNull<VMStoreContext>,
         pub(crate) unwinder: &'static dyn Unwind,
@@ -509,6 +521,7 @@ mod call_thread_state {
                 capture_backtrace: store.engine().config().wasm_backtrace,
                 #[cfg(feature = "coredump")]
                 capture_coredump: store.engine().config().coredump_on_trap,
+                no_unwind_traps: store.no_unwind_traps,
                 vm_store_context: store.vm_store_context_ptr(),
                 #[cfg(all(has_native_signals, unix))]
                 async_guard_range: store.async_guard_range(),
@@ -623,14 +636,9 @@ impl CallThreadState {
             // Wasm problem.
             #[cfg(all(feature = "std", panic = "unwind"))]
             UnwindReason::Panic(_) => (None, None),
-            // And if we are just propagating an existing trap that already has
-            // a backtrace attached to it, then there is no need to capture a
-            // new backtrace either.
-            UnwindReason::Trap(TrapReason::User(err))
-                if err.downcast_ref::<WasmBacktrace>().is_some() =>
-            {
-                (None, None)
-            }
+            // Host function errors should never capture backtraces since they
+            // don't have valid PC/FP and would cause assertion failures
+            UnwindReason::Trap(TrapReason::User(_)) => (None, None),
             UnwindReason::Trap(trap) => {
                 log::trace!("Capturing backtrace and coredump for {trap:?}");
                 (
@@ -733,6 +741,21 @@ impl CallThreadState {
         let Some(trap) = code.lookup_trap_code(text_offset) else {
             return TrapTest::NotWasm;
         };
+
+        // Check if this trap type should not unwind
+        if (self.no_unwind_traps & (1 << (trap as u8))) != 0 {
+            if trap == wasmtime_environ::Trap::PauseExecution {
+                // Save pause state in VMStoreContext
+                unsafe {
+                    let store_ptr = self.vm_store_context.as_ptr();
+                    if !store_ptr.is_null() {
+                        *(*store_ptr).paused_pc.get() = if regs.pc != 0 { regs.pc } else { 1 };
+                        *(*store_ptr).paused_fp.get() = if regs.fp != 0 { regs.fp } else { 1 };
+                    }
+                }
+            }
+            return TrapTest::TrapNoUnwind;
+        }
 
         // If all that passed then this is indeed a wasm trap, so return the
         // `jmp_buf` passed to `wasmtime_longjmp` to resume.

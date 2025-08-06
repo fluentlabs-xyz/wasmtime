@@ -65,6 +65,8 @@ pub const TRAP_CAST_FAILURE: TrapCode =
     TrapCode::unwrap_user(Trap::CastFailure as u8 + TRAP_OFFSET);
 pub const TRAP_DISABLED_OPCODE: TrapCode =
     TrapCode::unwrap_user(Trap::DisabledOpcode as u8 + TRAP_OFFSET);
+pub const TRAP_PAUSE_EXECUTION: TrapCode =
+    TrapCode::unwrap_user(Trap::PauseExecution as u8 + TRAP_OFFSET);
 
 /// Creates a new cranelift `Signature` with no wasm params/results for the
 /// given calling convention.

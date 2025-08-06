@@ -1054,6 +1054,13 @@ pub struct VMStoreContext {
     /// modified if wasm is configured to consume fuel.
     pub fuel_consumed: UnsafeCell<i64>,
 
+    /// Bitmask indicating which trap types should not unwind the stack.
+    ///
+    /// Each bit corresponds to a trap type (as defined by the trap code enum).
+    /// When a bit is set, that trap type will skip the faulting instruction
+    /// and continue execution instead of unwinding the stack.
+    pub no_unwind_traps: UnsafeCell<u64>,
+
     /// Deadline epoch for interruption: if epoch-based interruption
     /// is enabled and the global (per engine) epoch counter is
     /// observed to reach or exceed this value, the guest code will
@@ -1080,6 +1087,14 @@ pub struct VMStoreContext {
     /// Used to find the start of a contiguous sequence of Wasm frames when
     /// walking the stack.
     pub last_wasm_exit_fp: UnsafeCell<usize>,
+
+    /// Program counter where execution was paused for PauseExecution trap.
+    /// Zero indicates no paused execution.
+    pub paused_pc: UnsafeCell<usize>,
+
+    /// Frame pointer where execution was paused for PauseExecution trap.
+    /// Zero indicates no paused execution.
+    pub paused_fp: UnsafeCell<usize>,
 
     /// The last Wasm program counter before we called from Wasm to the host.
     ///
@@ -1125,6 +1140,7 @@ impl Default for VMStoreContext {
     fn default() -> VMStoreContext {
         VMStoreContext {
             fuel_consumed: UnsafeCell::new(0),
+            no_unwind_traps: UnsafeCell::new(0),
             epoch_deadline: UnsafeCell::new(0),
             stack_limit: UnsafeCell::new(usize::max_value()),
             gc_heap: VMMemoryDefinition {
@@ -1132,6 +1148,8 @@ impl Default for VMStoreContext {
                 current_length: AtomicUsize::new(0),
             },
             last_wasm_exit_fp: UnsafeCell::new(0),
+            paused_pc: UnsafeCell::new(0),
+            paused_fp: UnsafeCell::new(0),
             last_wasm_exit_pc: UnsafeCell::new(0),
             last_wasm_entry_fp: UnsafeCell::new(0),
         }

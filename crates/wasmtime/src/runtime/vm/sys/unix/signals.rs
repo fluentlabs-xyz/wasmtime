@@ -178,6 +178,9 @@ unsafe extern "C" fn trap_handler(
                 return false;
             }
             TrapTest::HandledByEmbedder => return true,
+            TrapTest::TrapNoUnwind { .. } => {
+                return true;
+            }
             TrapTest::Trap { jmp_buf } => jmp_buf,
         };
         // On macOS this is a bit special, unfortunately. If we were to

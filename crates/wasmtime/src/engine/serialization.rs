@@ -299,6 +299,7 @@ impl Metadata<'_> {
 
             // Just a debugging aid, doesn't affect functionality at all.
             debug_adapter_modules: _,
+            deterministic_interrupts: _,
         } = self.tunables;
 
         Self::check_collector(collector, other.collector)?;

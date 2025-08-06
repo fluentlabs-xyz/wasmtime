@@ -96,6 +96,10 @@ pub enum Trap {
     /// A Pulley opcode was executed at runtime when the opcode was disabled at
     /// compile time.
     DisabledOpcode,
+
+    /// Execution was paused and can be resumed. This trap can be configured
+    /// to not unwind the stack, allowing execution to continue when resumed.
+    PauseExecution,
     // if adding a variant here be sure to update the `check!` macro below
 }
 
@@ -134,6 +138,7 @@ impl Trap {
             CannotEnterComponent
             NoAsyncResult
             DisabledOpcode
+            PauseExecution
         }
 
         None
@@ -166,6 +171,7 @@ impl fmt::Display for Trap {
             CannotEnterComponent => "cannot enter component instance",
             NoAsyncResult => "async-lifted export failed to produce a result",
             DisabledOpcode => "pulley opcode disabled at compile time was executed",
+            PauseExecution => "execution paused and can be resumed",
         };
         write!(f, "wasm trap: {desc}")
     }
