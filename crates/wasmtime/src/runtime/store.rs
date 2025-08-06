@@ -388,9 +388,6 @@ pub struct StoreOpaque {
     /// For example if Pulley is enabled and configured then this will store a
     /// Pulley interpreter.
     executor: Executor,
-
-    // Captured call stack from when pause was triggered
-    captured_call_stack: Option<Vec<ExecutionFrameInfo>>,
 }
 
 /// Executor state within `StoreOpaque`.
@@ -574,7 +571,6 @@ impl<T> Store<T> {
                 Executor::Interpreter(Interpreter::new(engine))
             },
             no_unwind_traps: 0,
-            captured_call_stack: None,
         };
         let mut inner = Box::new(StoreInner {
             inner,
@@ -988,28 +984,6 @@ impl<T> Store<T> {
             paused_state,
         }
     }
-
-    /// Capture the current WebAssembly call stack
-    pub fn capture_call_stack(&self) -> Vec<ExecutionFrameInfo> {
-        // Delegate to the StoreOpaque implementation
-        self.inner.inner.capture_call_stack()
-    }
-
-    /// Store the captured call stack from when pause was triggered
-    pub fn set_captured_call_stack(&mut self, call_stack: Vec<ExecutionFrameInfo>) {
-        self.inner.inner.captured_call_stack = Some(call_stack);
-    }
-
-    /// Get the captured call stack if available
-    pub fn get_captured_call_stack(&self) -> Option<&Vec<ExecutionFrameInfo>> {
-        self.inner.inner.captured_call_stack.as_ref()
-    }
-
-    /// Clear the captured call stack
-    pub fn clear_captured_call_stack(&mut self) {
-        self.inner.inner.captured_call_stack = None;
-    }
-
 }
 
 impl<'a, T> StoreContext<'a, T> {
@@ -1118,11 +1092,6 @@ impl<'a, T> StoreContextMut<'a, T> {
     /// This should be called after successfully resuming execution.
     pub fn clear_paused_state(&mut self) {
         self.0.clear_paused_state();
-    }
-
-    /// Store the captured call stack from when pause was triggered
-    pub fn set_captured_call_stack(&mut self, call_stack: Vec<ExecutionFrameInfo>) {
-        self.0.set_captured_call_stack(call_stack);
     }
 
 }
@@ -1777,7 +1746,6 @@ impl StoreOpaque {
         PausedExecutionState {
             pc,
             fp,
-            call_stack: self.capture_call_stack(),
             fuel_remaining: self.get_fuel().ok(),
         }
     }
@@ -1788,69 +1756,16 @@ impl StoreOpaque {
             *self.vm_store_context.paused_pc.get() = 0;
             *self.vm_store_context.paused_fp.get() = 0;
         }
-        self.clear_captured_call_stack();
-    }
-
-    /// Capture the current WebAssembly call stack
-    pub fn capture_call_stack(&self) -> Vec<ExecutionFrameInfo> {
-        if let Some(captured_stack) = &self.captured_call_stack {
-            log::trace!("Using previously captured call stack with {} frames", captured_stack.len());
-            return captured_stack.clone();
-        }
-
-        log::trace!("Performing live call stack capture");
-        let mut frames = Vec::new();
-        let runtime_trace = crate::runtime::vm::Backtrace::new(self);
-        if runtime_trace.frames().len() == 0 {
-            log::trace!("No runtime frames found - likely called outside WASM execution");
-            return frames;
-        }
-        let wasm_backtrace = crate::WasmBacktrace::from_captured(self, runtime_trace, None);
-
-        log::trace!("Live capture found {} backtrace frames", wasm_backtrace.frames().len());
-        for (i, frame) in wasm_backtrace.frames().iter().enumerate() {
-            let function_name = frame.func_name().map(|s| s.to_string());
-            let module_name = frame.module().name().map(|s| s.to_string());
-            let instruction_offset = frame.func_offset().unwrap_or(0);
-
-            log::trace!("Frame {}: func={:?}, module={:?}, offset=0x{:x}",
-                     i, function_name, module_name, instruction_offset);
-            frames.push(ExecutionFrameInfo {
-                function_name,
-                module_name,
-                instruction_offset,
-            });
-        }
-
-        log::trace!("Stack capture completed with {} frames", frames.len());
-        frames
-    }
-
-    /// Store the captured call stack from when pause was triggered (StoreOpaque implementation)
-    pub fn set_captured_call_stack(&mut self, call_stack: Vec<ExecutionFrameInfo>) {
-        self.captured_call_stack = Some(call_stack);
-    }
-
-    /// Get the captured call stack if available (StoreOpaque implementation)
-    pub fn get_captured_call_stack(&self) -> Option<&Vec<ExecutionFrameInfo>> {
-        self.captured_call_stack.as_ref()
-    }
-
-    /// Clear the captured call stack (StoreOpaque implementation)
-    pub fn clear_captured_call_stack(&mut self) {
-        self.captured_call_stack = None;
     }
 
     /// Capture execution state for creating an ExecutionHandle
     pub fn capture_execution_handle(&self) -> ExecutionHandle {
         let store_id = self.id();
-
-        // Get the current paused state
         let paused_state = if let Some(state) = self.get_paused_state() {
             state
         } else {
             // Create a simple state if no pause state exists
-            self.create_paused_state(1, 1) // Use non-zero to avoid assertions
+            self.create_paused_state(1, 1)
         };
 
         ExecutionHandle {
@@ -2619,8 +2534,6 @@ pub struct PausedExecutionState {
     pub pc: usize,
     /// The frame pointer when execution was paused.
     pub fp: usize,
-    /// WebAssembly call stack at pause time
-    pub call_stack: Vec<ExecutionFrameInfo>,
     /// Fuel remaining at pause time
     pub fuel_remaining: Option<u64>,
 }
@@ -2733,7 +2646,6 @@ impl ExecutionHandle {
                 Ok(vec![crate::Val::I32(result_value as i32)])
             }
             Err(_) => {
-                log::trace!("Native jump fail");
                 panic!("Native jump execution failed")
             }
         }

@@ -13,10 +13,24 @@ fn test_basic_pause_resume() -> Result<()> {
     store.set_pause_execution_no_unwind();
 
     let mut linker = Linker::new(&engine);
-    linker.func_wrap("host", "pause", |mut caller: Caller<'_, ()>| -> anyhow::Result<()> {
-        match caller.pause_execution() {
-            Ok(()) => Ok(()),
-            Err(trap) => Err(anyhow::Error::from(trap)),
+    let call_count = std::rc::Rc::new(std::cell::RefCell::new(0));
+    let call_count_clone = call_count.clone();
+
+    linker.func_wrap("host", "pause", move |mut caller: Caller<'_, ()>| -> anyhow::Result<()> {
+        let mut count = call_count_clone.borrow_mut();
+        *count += 1;
+        let current_call = *count;
+        if current_call == 1 {
+            // First call - trigger pause
+            log::trace!("Host function first call - triggering pause");
+            match caller.pause_execution() {
+                Ok(()) => Ok(()),
+                Err(trap) => Err(anyhow::Error::from(trap)),
+            }
+        } else {
+            // Resume call - just continue normally and return
+            log::trace!("Host function resume call - continuing normally");
+            Ok(())
         }
     })?;
 
@@ -45,8 +59,15 @@ fn test_basic_pause_resume() -> Result<()> {
     // Test resume
     let handle = store.capture_execution_handle();
     match handle.resume(&mut store) {
-        Ok(results) => {
+        Ok(_) => {
             assert!(!store.is_execution_paused(), "Execution should not be paused after resume");
+            match test_func.call(&mut store, ()) {
+                Ok(result) => {
+                    assert_eq!(result, 42);
+                    println!("Resume successful! returned value: {}", result);
+                }
+                Err(e) => panic!("Function call after resume failed: {}", e),
+            }
         }
         Err(e) => panic!("Resume failed: {}", e),
     }
@@ -190,9 +211,6 @@ fn test_error_handling() -> Result<()> {
         pc: 0,
         fp: 0,
         call_stack: Vec::new(),
-        current_function: None,
-        memory_info: Vec::new(),
-        globals_info: Vec::new(),
         fuel_remaining: Some(1000),
     };
 

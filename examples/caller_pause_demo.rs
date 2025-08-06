@@ -63,13 +63,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if let Some(fuel) = paused_state.fuel_remaining {
                             println!("Fuel remaining: {}", fuel);
                         }
-                        // TODO: remove this?
-                        println!("Call stack frames: {}", paused_state.call_stack.len());
-                        for (i, frame) in paused_state.call_stack.iter().enumerate() {
-                            println!("  Frame {}: {:?} @ offset 0x{:x}",
-                                   i, frame.function_name.as_deref().unwrap_or("<unknown>"),
-                                   frame.instruction_offset);
-                        }
                     }
                     None => {
                         println!("⚠️  No paused state available (get_paused_state returned None)");
