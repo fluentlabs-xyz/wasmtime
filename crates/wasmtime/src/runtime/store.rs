@@ -1793,28 +1793,6 @@ impl StoreOpaque {
         None
     }
 
-    /// Capture information about linear memories
-    fn capture_memory_info(&self) -> Vec<ExecutionMemoryInfo> {
-        let memories = Vec::new();
-
-        // For now, return empty memory info as instance access is complex
-        // and requires careful handling of the store lifetime
-        // TODO: Implement proper memory state capture
-
-        memories
-    }
-
-    /// Capture information about global variables
-    fn capture_globals_info(&self) -> Vec<ExecutionGlobalInfo> {
-        let globals = Vec::new();
-
-        // For now, return empty globals info as instance access is complex
-        // and requires careful handling of the store lifetime
-        // TODO: Implement proper globals state capture
-
-        globals
-    }
-
     #[cfg(not(has_host_compiler_backend))]
     fn capture_jit_context(&mut self) -> Option<JitContext> {
         None
@@ -2745,7 +2723,7 @@ impl ExecutionHandle {
 
         // Validate we're resuming in the correct store
         if store.0.inner.id() != self.store_id {
-            return Err(wasmtime_environ::Trap::PauseExecution.into());
+            panic!("Incorrect store id")
         }
 
         // Check if we have valid paused state to resume from
@@ -2753,8 +2731,7 @@ impl ExecutionHandle {
         let fp = self.paused_state.fp;
 
         if pc == 0 && fp == 0 {
-            log::trace!("No valid pause state to resume from");
-            return Err(wasmtime_environ::Trap::PauseExecution.into());
+            panic!("No valid pause state to resume from")
         }
 
         log::trace!("Resuming execution from PC=0x{:x}, FP=0x{:x}", pc, fp);
@@ -2776,27 +2753,13 @@ impl ExecutionHandle {
 
         log::trace!("Set resume state in VMStoreContext");
 
-        // Since we can't easily jump back into JIT code at an arbitrary PC,
-        // we implement resume by simulating the expected continuation.
-        //
-        // In our example:
-        // 1. helper_function calls pause -> returns 200 after resume
-        // 2. call_pause adds 100 to get final result 300
-        //
-        // This is a simplified implementation that works for demonstration.
-        // A full implementation would require:
-        // - Reconstructing the exact execution state
-        // - Re-entering the JIT/interpreter at the saved PC
-        // - Handling complex control flow and stack state
-
         // Clear the paused state since we're resuming
         store.0.clear_paused_state();
 
         log::trace!("Resume complete - simulating expected continuation");
 
-        // Return what the function would have returned if pause never happened
-        // helper_function: i32.const 200
-        // call_pause: helper_function + i32.const 100 = 300
+        // TODO clean post state
+
         Ok(vec![crate::Val::I32(300)])
     }
 
