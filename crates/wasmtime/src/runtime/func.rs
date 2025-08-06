@@ -2217,6 +2217,10 @@ impl<T> Caller<'_, T> {
     /// Pause execution by triggering a PauseExecution trap.
     pub fn pause_execution(&mut self) -> Result<(), crate::Trap> {
         log::trace!("Capturing call stack from Caller::pause_execution");
+        let vm_store_context = self.store.0.vm_store_context();
+        let wasm_pc = unsafe { *vm_store_context.last_wasm_exit_pc.get() };
+        let wasm_fp = unsafe { *vm_store_context.last_wasm_exit_fp.get() };
+        log::trace!("WASM execution state: PC=0x{:x}, FP=0x{:x}", wasm_pc, wasm_fp);
         let call_stack = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let wasm_backtrace = crate::WasmBacktrace::force_capture(&self.store);
             log::trace!("WasmBacktrace captured {} frames", wasm_backtrace.frames().len());
@@ -2225,10 +2229,8 @@ impl<T> Caller<'_, T> {
                 let function_name = frame.func_name().map(|s| s.to_string());
                 let module_name = frame.module().name().map(|s| s.to_string());
                 let instruction_offset = frame.func_offset().unwrap_or(0);
-
                 log::trace!("Frame {}: func={:?}, module={:?}, offset=0x{:x}",
                          i, function_name, module_name, instruction_offset);
-
                 call_stack.push(crate::ExecutionFrameInfo {
                     function_name,
                     module_name,
@@ -2251,6 +2253,7 @@ impl<T> Caller<'_, T> {
             }
         };
         self.store.set_captured_call_stack(call_stack);
+        self.store.0.pause_execution(wasm_pc, wasm_fp);
         Err(wasmtime_environ::Trap::PauseExecution.into())
     }
 }
