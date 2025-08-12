@@ -1088,14 +1088,6 @@ pub struct VMStoreContext {
     /// walking the stack.
     pub last_wasm_exit_fp: UnsafeCell<usize>,
 
-    /// Program counter where execution was paused for PauseExecution trap.
-    /// Zero indicates no paused execution.
-    pub paused_pc: UnsafeCell<usize>,
-
-    /// Frame pointer where execution was paused for PauseExecution trap.
-    /// Zero indicates no paused execution.
-    pub paused_fp: UnsafeCell<usize>,
-
     /// The last Wasm program counter before we called from Wasm to the host.
     ///
     /// Maintained by our Wasm-to-host trampoline, and cleared just before
@@ -1124,6 +1116,12 @@ pub struct VMStoreContext {
     /// Used to find the end of a contiguous sequence of Wasm frames when
     /// walking the stack.
     pub last_wasm_entry_fp: UnsafeCell<usize>,
+
+    /// Paused execution program counter (nonzero when execution is paused).
+    pub paused_pc: UnsafeCell<usize>,
+
+    /// Paused execution frame pointer (nonzero when execution is paused).
+    pub paused_fp: UnsafeCell<usize>,
 }
 
 // The `VMStoreContext` type is a pod-type with no destructor, and we don't
@@ -1148,10 +1146,10 @@ impl Default for VMStoreContext {
                 current_length: AtomicUsize::new(0),
             },
             last_wasm_exit_fp: UnsafeCell::new(0),
-            paused_pc: UnsafeCell::new(0),
-            paused_fp: UnsafeCell::new(0),
             last_wasm_exit_pc: UnsafeCell::new(0),
             last_wasm_entry_fp: UnsafeCell::new(0),
+            paused_pc: UnsafeCell::new(0),
+            paused_fp: UnsafeCell::new(0),
         }
     }
 }
@@ -1201,6 +1199,14 @@ mod test_vmstore_context {
         assert_eq!(
             offset_of!(VMStoreContext, last_wasm_entry_fp),
             usize::from(offsets.ptr.vmstore_context_last_wasm_entry_fp())
+        );
+        assert_eq!(
+            offset_of!(VMStoreContext, paused_pc),
+            usize::from(offsets.ptr.vmstore_context_paused_pc())
+        );
+        assert_eq!(
+            offset_of!(VMStoreContext, paused_fp),
+            usize::from(offsets.ptr.vmstore_context_paused_fp())
         );
     }
 }

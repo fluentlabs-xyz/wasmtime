@@ -13,11 +13,11 @@ fn test_basic_pause_resume() -> Result<()> {
     store.set_pause_execution_no_unwind();
 
     let mut linker = Linker::new(&engine);
-    let call_count = std::rc::Rc::new(std::cell::RefCell::new(0));
+    let call_count = std::sync::Arc::new(std::sync::Mutex::new(0));
     let call_count_clone = call_count.clone();
 
     linker.func_wrap("host", "pause", move |mut caller: Caller<'_, ()>| -> anyhow::Result<()> {
-        let mut count = call_count_clone.borrow_mut();
+        let mut count = call_count_clone.lock().unwrap();
         *count += 1;
         let current_call = *count;
         if current_call == 1 {
@@ -210,7 +210,7 @@ fn test_error_handling() -> Result<()> {
     let dummy_state = PausedExecutionState {
         pc: 0,
         fp: 0,
-        call_stack: Vec::new(),
+
         fuel_remaining: Some(1000),
     };
 

@@ -20,7 +20,7 @@ use crate::runtime::store::{ExecutorRef, StoreOpaque};
 use crate::runtime::vm::sys::traphandlers;
 use crate::runtime::vm::{InterpreterRef, VMContext, VMStoreContext, f32x4, f64x2, i8x16};
 use crate::{EntryStoreContext, prelude::*};
-use crate::StoreContextMut;
+use crate::{StoreContextMut, WasmBacktrace};
 use core::cell::Cell;
 use core::num::NonZeroU32;
 use core::ops::Range;
@@ -636,9 +636,36 @@ impl CallThreadState {
             // Wasm problem.
             #[cfg(all(feature = "std", panic = "unwind"))]
             UnwindReason::Panic(_) => (None, None),
-            // Host function errors should never capture backtraces since they
-            // don't have valid PC/FP and would cause assertion failures
-            UnwindReason::Trap(TrapReason::User(_)) => (None, None),
+            // For host errors: if it's already got a WasmBacktrace, or is a
+            // PauseExecution trap (either crate::Trap or environ Trap), skip capture.
+            UnwindReason::Trap(TrapReason::User(err)) => {
+                if err.downcast_ref::<WasmBacktrace>().is_some() {
+                    (None, None)
+                } else if let Some(t) = err.downcast_ref::<crate::Trap>() {
+                    if *t == crate::Trap::PauseExecution {
+                        (None, None)
+                    } else {
+                        (
+                            self.capture_backtrace(self.vm_store_context.as_ptr(), None),
+                            self.capture_coredump(self.vm_store_context.as_ptr(), None),
+                        )
+                    }
+                } else if let Some(t) = err.downcast_ref::<wasmtime_environ::Trap>() {
+                    if *t == wasmtime_environ::Trap::PauseExecution {
+                        (None, None)
+                    } else {
+                        (
+                            self.capture_backtrace(self.vm_store_context.as_ptr(), None),
+                            self.capture_coredump(self.vm_store_context.as_ptr(), None),
+                        )
+                    }
+                } else {
+                    (
+                        self.capture_backtrace(self.vm_store_context.as_ptr(), None),
+                        self.capture_coredump(self.vm_store_context.as_ptr(), None),
+                    )
+                }
+            }
             UnwindReason::Trap(trap) => {
                 log::trace!("Capturing backtrace and coredump for {trap:?}");
                 (
