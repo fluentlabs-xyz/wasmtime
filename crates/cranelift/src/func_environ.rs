@@ -3787,51 +3787,22 @@ impl FuncEnvironment<'_> {
 
     /// Conditionally guard against a trap based on runtime configuration.
     ///
-    /// This inserts a check against the no_unwind_traps bitmask at runtime which defines if the
-    /// trap should unwind.
+    /// Only `Trap::PauseExecution` should not unwind - all others should trap normally.
     fn guard_conditional_trap(&mut self, builder: &mut FunctionBuilder, trap_code: ir::TrapCode) {
         if self.clif_instruction_traps_enabled() {
             return;
         }
 
-        let trap_block = builder.create_block();
-        let continuation_block = builder.create_block();
-        builder.set_cold_block(trap_block);
-
-        // Load the no_unwind_traps bitmask from VMStoreContext
-        let vmstore_ctx = self.get_vmstore_context_ptr(builder);
-        let no_unwind_traps_offset: ir::immediates::Offset32 =
-            i32::from(self.offsets.ptr.vmstore_context_no_unwind_traps()).into();
-        let no_unwind_traps = builder.ins().load(
-            ir::types::I64,
-            ir::MemFlags::trusted(),
-            vmstore_ctx,
-            no_unwind_traps_offset,
-        );
-
-        // Check if this trap type should not unwind
         // Convert Cranelift TrapCode to Wasmtime Trap enum
         let env_trap = match crate::clif_trap_to_env_trap(trap_code) {
             Some(trap) => trap,
             None => return, // Internal traps can't be configured
         };
-        let trap_bit = 1u64 << (env_trap as u8);
-        let trap_mask = builder.ins().iconst(ir::types::I64, trap_bit as i64);
-        let masked = builder.ins().band(no_unwind_traps, trap_mask);
-        let zero_i64 = builder.ins().iconst(ir::types::I64, 0);
-        let should_not_unwind = builder.ins().icmp(IntCC::NotEqual, masked, zero_i64);
+        if env_trap == wasmtime_environ::Trap::PauseExecution {
+            return;
+        }
 
-        // Branch: if should_not_unwind, continue; else trap
-        builder
-            .ins()
-            .brif(should_not_unwind, continuation_block, &[], trap_block, &[]);
-
-        builder.seal_block(trap_block);
-        builder.switch_to_block(trap_block);
         self.trap(builder, trap_code);
-
-        builder.seal_block(continuation_block);
-        builder.switch_to_block(continuation_block);
     }
 }
 

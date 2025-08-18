@@ -96,13 +96,11 @@ pub(crate) fn from_runtime_box(
             // Check if this is a PauseExecution trap from a host function
             if let Some(trap_env) = error.downcast_ref::<wasmtime_environ::Trap>() {
                 if *trap_env == wasmtime_environ::Trap::PauseExecution {
-                    // Check if this trap should not unwind
-                    if (store.no_unwind_traps & (1 << (wasmtime_environ::Trap::PauseExecution as u8))) != 0 {
-                        // For host function PauseExecution traps, we use a fake PC to avoid backtrace issues
-                        store.pause_execution(1, 1); // Use 1 instead of 0 to avoid assertion failures
-                        // Return the PauseExecution error directly without backtrace
-                        return wasmtime_environ::Trap::PauseExecution.into();
-                    }
+                    // PauseExecution should not unwind
+                    // For host function PauseExecution traps, we use a fake PC to avoid backtrace issues
+                    store.pause_execution(1, 1); // Use 1 instead of 0 to avoid assertion failures
+                    // Return the PauseExecution error directly without backtrace
+                    return wasmtime_environ::Trap::PauseExecution.into();
                 }
             }
             (error, None)

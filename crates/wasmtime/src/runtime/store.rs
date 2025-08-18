@@ -353,7 +353,7 @@ pub struct StoreOpaque {
     fuel_reserve: u64,
     fuel_yield_interval: Option<NonZeroU64>,
     /// Whether traps should not be unwinded.
-    pub no_unwind_traps: u64,
+
     /// Indexed data within this `Store`, used to store information about
     /// globals, functions, memories, etc.
     store_data: StoreData,
@@ -570,7 +570,7 @@ impl<T> Store<T> {
                 debug_assert!(engine.target().is_pulley());
                 Executor::Interpreter(Interpreter::new(engine))
             },
-            no_unwind_traps: 0,
+
         };
         let mut inner = Box::new(StoreInner {
             inner,

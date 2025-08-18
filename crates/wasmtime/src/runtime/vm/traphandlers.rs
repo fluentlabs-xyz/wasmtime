@@ -472,7 +472,6 @@ mod call_thread_state {
         pub(super) capture_backtrace: bool,
         #[cfg(feature = "coredump")]
         pub(super) capture_coredump: bool,
-        pub(super) no_unwind_traps: u64,
 
         pub(crate) vm_store_context: NonNull<VMStoreContext>,
         pub(crate) unwinder: &'static dyn Unwind,
@@ -521,7 +520,6 @@ mod call_thread_state {
                 capture_backtrace: store.engine().config().wasm_backtrace,
                 #[cfg(feature = "coredump")]
                 capture_coredump: store.engine().config().coredump_on_trap,
-                no_unwind_traps: store.no_unwind_traps,
                 vm_store_context: store.vm_store_context_ptr(),
                 #[cfg(all(has_native_signals, unix))]
                 async_guard_range: store.async_guard_range(),
@@ -769,16 +767,14 @@ impl CallThreadState {
             return TrapTest::NotWasm;
         };
 
-        // Check if this trap type should not unwind
-        if (self.no_unwind_traps & (1 << (trap as u8))) != 0 {
-            if trap == wasmtime_environ::Trap::PauseExecution {
-                // Save pause state in VMStoreContext
-                unsafe {
-                    let store_ptr = self.vm_store_context.as_ptr();
-                    if !store_ptr.is_null() {
-                        *(*store_ptr).paused_pc.get() = if regs.pc != 0 { regs.pc } else { 1 };
-                        *(*store_ptr).paused_fp.get() = if regs.fp != 0 { regs.fp } else { 1 };
-                    }
+        // PauseExecution should not unwind
+        if trap == wasmtime_environ::Trap::PauseExecution {
+            // Save pause state in VMStoreContext
+            unsafe {
+                let store_ptr = self.vm_store_context.as_ptr();
+                if !store_ptr.is_null() {
+                    *(*store_ptr).paused_pc.get() = if regs.pc != 0 { regs.pc } else { 1 };
+                    *(*store_ptr).paused_fp.get() = if regs.fp != 0 { regs.fp } else { 1 };
                 }
             }
             return TrapTest::TrapNoUnwind;

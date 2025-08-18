@@ -1054,12 +1054,7 @@ pub struct VMStoreContext {
     /// modified if wasm is configured to consume fuel.
     pub fuel_consumed: UnsafeCell<i64>,
 
-    /// Bitmask indicating which trap types should not unwind the stack.
-    ///
-    /// Each bit corresponds to a trap type (as defined by the trap code enum).
-    /// When a bit is set, that trap type will skip the faulting instruction
-    /// and continue execution instead of unwinding the stack.
-    pub no_unwind_traps: UnsafeCell<u64>,
+
 
     /// Deadline epoch for interruption: if epoch-based interruption
     /// is enabled and the global (per engine) epoch counter is
@@ -1138,7 +1133,7 @@ impl Default for VMStoreContext {
     fn default() -> VMStoreContext {
         VMStoreContext {
             fuel_consumed: UnsafeCell::new(0),
-            no_unwind_traps: UnsafeCell::new(0),
+
             epoch_deadline: UnsafeCell::new(0),
             stack_limit: UnsafeCell::new(usize::max_value()),
             gc_heap: VMMemoryDefinition {
