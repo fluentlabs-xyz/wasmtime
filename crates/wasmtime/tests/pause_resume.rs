@@ -210,8 +210,6 @@ fn test_error_handling() -> Result<()> {
     let dummy_state = PausedExecutionState {
         pc: 0,
         fp: 0,
-
-        fuel_remaining: Some(1000),
     };
 
     let invalid_handle = ExecutionHandle::new_for_test(dummy_state);
@@ -265,7 +263,7 @@ fn test_execution_handle_api() -> Result<()> {
             let paused_state = handle.paused_state();
             assert_ne!(paused_state.pc, 0, "Should have valid PC");
             assert_ne!(paused_state.fp, 0, "Should have valid FP");
-            assert!(paused_state.fuel_remaining.is_some(), "Should have fuel info");
+            // Fuel is tracked in the store, not in the paused state
             let results = handle.resume(&mut store)?;
             assert!(!results.is_empty(), "Should return results");
         }

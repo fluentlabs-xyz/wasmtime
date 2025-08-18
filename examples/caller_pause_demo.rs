@@ -60,7 +60,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Some(paused_state) => {
                         println!("pc: 0x{:x}", paused_state.pc);
                         println!("fp: 0x{:x}", paused_state.fp);
-                        if let Some(fuel) = paused_state.fuel_remaining {
+                        // Fuel is tracked in the store itself, not in the paused state
+                        if let Ok(fuel) = store.get_fuel() {
                             println!("Fuel remaining: {}", fuel);
                         }
                     }

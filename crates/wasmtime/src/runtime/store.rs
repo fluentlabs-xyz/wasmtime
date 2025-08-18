@@ -980,7 +980,6 @@ impl<T> Store<T> {
 
         ExecutionHandle {
             store_id,
-            remaining_fuel: self.get_fuel().ok(),
             paused_state,
         }
     }
@@ -1746,7 +1745,6 @@ impl StoreOpaque {
         PausedExecutionState {
             pc,
             fp,
-            fuel_remaining: self.get_fuel().ok(),
         }
     }
 
@@ -1770,7 +1768,6 @@ impl StoreOpaque {
 
         ExecutionHandle {
             store_id,
-            remaining_fuel: self.get_fuel().ok(),
             paused_state,
         }
     }
@@ -2534,8 +2531,6 @@ pub struct PausedExecutionState {
     pub pc: usize,
     /// The frame pointer when execution was paused.
     pub fp: usize,
-    /// Fuel remaining at pause time
-    pub fuel_remaining: Option<u64>,
 }
 
 /// Information about a frame in the call stack
@@ -2593,8 +2588,6 @@ pub struct ExecutionGlobalInfo {
 pub struct ExecutionHandle {
     /// Store identifier for validation during resume
     store_id: StoreId,
-    /// Remaining fuel at pause time
-    remaining_fuel: Option<u64>,
     /// Complete execution state at pause
     paused_state: PausedExecutionState,
 }
@@ -2617,10 +2610,6 @@ impl ExecutionHandle {
         }
         let pc = self.paused_state.pc;
         let fp = self.paused_state.fp;
-        if let Some(fuel) = self.remaining_fuel {
-            let _ = store.set_fuel(fuel);
-            log::trace!("Restored fuel to {}", fuel);
-        }
         println!("Resume from pc=0x{:x}, fp=0x{:x}", pc, fp);
 
         unsafe {
@@ -2655,7 +2644,6 @@ impl ExecutionHandle {
     pub fn new_for_test(paused_state: PausedExecutionState) -> Self {
         Self {
             store_id: StoreId::allocate(),
-            remaining_fuel: paused_state.fuel_remaining,
             paused_state,
         }
     }
