@@ -2217,13 +2217,12 @@ impl<T> Caller<'_, T> {
     /// Pause execution by setting the paused state without unwinding.
     /// This captures the current execution state and marks the store as paused.
     pub fn pause_execution(&mut self) -> Result<(), crate::Trap> {
-        // Capture the current jmp_buf from CallThreadState BEFORE any unwinding
+        // Capture the current jmp_buf before any unwinding
         let mut jmp_buf_content = [0u8; 256];
         let jmp_buf_copied = crate::vm::tls::with(|state| {
             if let Some(state) = state {
                 let jmp_buf_ptr = state.get_jmp_buf();
                 if !jmp_buf_ptr.is_null() {
-                    // Copy the jmp_buf content to avoid use-after-free
                     unsafe {
                         std::ptr::copy_nonoverlapping(jmp_buf_ptr, jmp_buf_content.as_mut_ptr(), 256);
                     }
@@ -2235,24 +2234,23 @@ impl<T> Caller<'_, T> {
                 false
             }
         });
-        
+
         // Set the paused state without unwinding
         unsafe {
             let vm_context = self.store.0.vm_store_context();
             let last_pc = *vm_context.last_wasm_exit_pc.get();
             let last_fp = *vm_context.last_wasm_exit_fp.get();
-            
+
             // Set paused state - use 1 as fallback to avoid 0 values
             *vm_context.paused_pc.get() = if last_pc != 0 { last_pc } else { 1 };
             *vm_context.paused_fp.get() = if last_fp != 0 { last_fp } else { 1 };
-            
+
             if jmp_buf_copied {
                 *vm_context.paused_jmp_buf.get() = jmp_buf_content;
             }
         }
-        
-        // Instead of returning an error that causes unwinding, 
-        // return Ok and let the host function complete normally
+
+        // return Ok to let the host function complete normally
         Ok(())
     }
 }

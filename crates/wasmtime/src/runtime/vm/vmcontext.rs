@@ -1134,7 +1134,6 @@ impl Default for VMStoreContext {
     fn default() -> VMStoreContext {
         VMStoreContext {
             fuel_consumed: UnsafeCell::new(0),
-
             epoch_deadline: UnsafeCell::new(0),
             stack_limit: UnsafeCell::new(usize::max_value()),
             gc_heap: VMMemoryDefinition {
@@ -1197,7 +1196,6 @@ mod test_vmstore_context {
             offset_of!(VMStoreContext, last_wasm_entry_fp),
             usize::from(offsets.ptr.vmstore_context_last_wasm_entry_fp())
         );
-
     }
 }
 
