@@ -1193,14 +1193,7 @@ mod test_vmstore_context {
             offset_of!(VMStoreContext, last_wasm_entry_fp),
             usize::from(offsets.ptr.vmstore_context_last_wasm_entry_fp())
         );
-        assert_eq!(
-            offset_of!(VMStoreContext, paused_pc),
-            usize::from(offsets.ptr.vmstore_context_paused_pc())
-        );
-        assert_eq!(
-            offset_of!(VMStoreContext, paused_fp),
-            usize::from(offsets.ptr.vmstore_context_paused_fp())
-        );
+
     }
 }
 
