@@ -352,7 +352,6 @@ pub struct StoreOpaque {
     // until the reserve is empty.
     fuel_reserve: u64,
     fuel_yield_interval: Option<NonZeroU64>,
-    /// Whether traps should not be unwinded.
 
     /// Indexed data within this `Store`, used to store information about
     /// globals, functions, memories, etc.
@@ -570,7 +569,6 @@ impl<T> Store<T> {
                 debug_assert!(engine.target().is_pulley());
                 Executor::Interpreter(Interpreter::new(engine))
             },
-
         };
         let mut inner = Box::new(StoreInner {
             inner,
@@ -947,7 +945,8 @@ impl<T> Store<T> {
     /// When a PauseExecution trap occurs, execution will continue past the trap
     /// instruction instead of unwinding to the host.
     pub fn set_pause_execution_no_unwind(&mut self) {
-        self.inner.set_trap_no_unwind(wasmtime_environ::Trap::PauseExecution);
+        self.inner
+            .set_trap_no_unwind(wasmtime_environ::Trap::PauseExecution);
     }
 
     /// Check if execution is currently paused due to a PauseExecution trap.
@@ -967,20 +966,18 @@ impl<T> Store<T> {
     }
 
     /// Capture the current execution state as an ExecutionHandle.
-    pub fn capture_execution_handle(&self) -> ExecutionHandle {
+    ///
+    /// Returns the captured execution state if the execution was previously paused, None
+    /// otherwise.
+    pub fn capture_execution_handle(&self) -> Option<ExecutionHandle> {
         let store_id = self.inner.id();
-
-        // Get the current paused state
-        let paused_state = if let Some(state) = self.get_paused_state() {
-            state
+        if let Some(paused_state) = self.get_paused_state() {
+            Some(ExecutionHandle {
+                store_id,
+                paused_state,
+            })
         } else {
-            // Create a simple state if no pause state exists
-            self.inner.create_paused_state(1, 1) // Use non-zero to avoid assertions
-        };
-
-        ExecutionHandle {
-            store_id,
-            paused_state,
+            None
         }
     }
 }
@@ -1092,7 +1089,6 @@ impl<'a, T> StoreContextMut<'a, T> {
     pub fn clear_paused_state(&mut self) {
         self.0.clear_paused_state();
     }
-
 }
 
 impl<T> StoreInner<T> {
@@ -1711,7 +1707,10 @@ impl StoreOpaque {
     pub fn set_trap_no_unwind(&mut self, trap: wasmtime_environ::Trap) {
         // This method is implemented at the Store level, not directly on StoreOpaque
         // The actual implementation should be coordinated with VM context state
-        log::trace!("StoreOpaque::set_trap_no_unwind called for trap: {:?}", trap);
+        log::trace!(
+            "StoreOpaque::set_trap_no_unwind called for trap: {:?}",
+            trap
+        );
     }
 
     /// Store the paused execution state from a PauseExecution trap.
@@ -1724,7 +1723,10 @@ impl StoreOpaque {
 
     /// Check if execution is currently paused.
     pub fn is_execution_paused(&self) -> bool {
-        unsafe { *self.vm_store_context.paused_pc.get() != 0 || *self.vm_store_context.paused_fp.get() != 0 }
+        unsafe {
+            *self.vm_store_context.paused_pc.get() != 0
+                || *self.vm_store_context.paused_fp.get() != 0
+        }
     }
 
     /// Get the paused execution state, if any.
@@ -1742,10 +1744,7 @@ impl StoreOpaque {
 
     /// Create a proper paused execution state with captured context
     fn create_paused_state(&self, pc: usize, fp: usize) -> PausedExecutionState {
-        PausedExecutionState {
-            pc,
-            fp,
-        }
+        PausedExecutionState { pc, fp }
     }
 
     /// Clear the paused execution state.
@@ -1756,19 +1755,19 @@ impl StoreOpaque {
         }
     }
 
-    /// Capture execution state for creating an ExecutionHandle
-    pub fn capture_execution_handle(&self) -> ExecutionHandle {
+    /// Capture execution state for creating an ExecutionHandle.
+    ///
+    /// Returns the captured execution state if the execution was previously paused, None
+    /// otherwise.
+    pub fn capture_execution_handle(&self) -> Option<ExecutionHandle> {
         let store_id = self.id();
-        let paused_state = if let Some(state) = self.get_paused_state() {
-            state
+        if let Some(paused_state) = self.get_paused_state() {
+            Some(ExecutionHandle {
+                store_id,
+                paused_state,
+            })
         } else {
-            // Create a simple state if no pause state exists
-            self.create_paused_state(1, 1)
-        };
-
-        ExecutionHandle {
-            store_id,
-            paused_state,
+            None
         }
     }
 
@@ -2068,8 +2067,6 @@ at https://bytecodealliance.org/security.
         let instance_id = vm::Instance::from_vmctx(vmctx, |i| i.id());
         StoreInstanceId::new(self.id(), instance_id)
     }
-
-
 }
 
 /// Helper parameter to [`StoreOpaque::allocate_instance`].
@@ -2664,5 +2661,3 @@ impl ExecutionHandle {
         self.paused_state.pc != 0 || self.paused_state.fp != 0
     }
 }
-
-

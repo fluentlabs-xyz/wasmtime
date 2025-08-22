@@ -1054,8 +1054,6 @@ pub struct VMStoreContext {
     /// modified if wasm is configured to consume fuel.
     pub fuel_consumed: UnsafeCell<i64>,
 
-
-
     /// Deadline epoch for interruption: if epoch-based interruption
     /// is enabled and the global (per engine) epoch counter is
     /// observed to reach or exceed this value, the guest code will

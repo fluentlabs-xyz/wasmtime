@@ -585,12 +585,9 @@ impl Instance {
         if !store.0.is_execution_paused() {
             return None;
         }
-        // Get the paused state to check if it belongs to this instance
         if let Some(paused_state) = store.0.get_paused_state() {
-            // For now, we'll return the execution handle if execution is paused
-            // In a more sophisticated implementation, we could check if the paused
-            // execution belongs to this specific instance
-            Some(store.0.capture_execution_handle())
+            // TODO: check if the paused execution belongs to this specific instance
+            store.0.capture_execution_handle()
         } else {
             None
         }

@@ -57,7 +57,7 @@ fn test_basic_pause_resume() -> Result<()> {
     }
 
     // Test resume
-    let handle = store.capture_execution_handle();
+    let handle = store.capture_execution_handle().expect("the execution is not paused");
     match handle.resume(&mut store) {
         Ok(_) => {
             assert!(!store.is_execution_paused(), "Execution should not be paused after resume");
@@ -120,11 +120,11 @@ fn test_multiple_pause_resume_cycles() -> Result<()> {
     match multi_pause_func.call(&mut store, ()) {
         Err(_) if store.is_execution_paused() => {
             // Resume and pause again
-            let handle1 = store.capture_execution_handle();
+            let handle1 = store.capture_execution_handle().expect("the execution is not paused");;
             handle1.resume(&mut store)?;
             if store.is_execution_paused() {
                 // Final resume
-                let handle2 = store.capture_execution_handle();
+                let handle2 = store.capture_execution_handle().expect("the execution is not paused");;
                 let _results = handle2.resume(&mut store)?;
             }
         }
@@ -187,7 +187,7 @@ fn test_state_preservation() -> Result<()> {
             assert_ne!(paused_state.pc, 0, "pc should be captured");
             assert_ne!(paused_state.fp, 0, "fp should be captured");
             assert!(remaining_fuel < initial_fuel, "Fuel should be consumed");
-            let handle = store.capture_execution_handle();
+            let handle = store.capture_execution_handle().expect("the execution is not paused");;
             let _results = handle.resume(&mut store)?;
         }
         _ => panic!("Expected pause trap"),
@@ -258,7 +258,7 @@ fn test_execution_handle_api() -> Result<()> {
 
     match test_func.call(&mut store, ()) {
         Err(_) if store.is_execution_paused() => {
-            let handle = store.capture_execution_handle();
+            let handle = store.capture_execution_handle().expect("the execution is not paused");;
             assert!(handle.can_resume(), "Handle should be resumable");
             let paused_state = handle.paused_state();
             assert_ne!(paused_state.pc, 0, "Should have valid PC");
