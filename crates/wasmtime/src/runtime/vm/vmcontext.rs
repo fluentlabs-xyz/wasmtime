@@ -1115,6 +1115,9 @@ pub struct VMStoreContext {
 
     /// Paused execution frame pointer (nonzero when execution is paused).
     pub paused_fp: UnsafeCell<usize>,
+
+    /// Paused execution jump buffer for native stack restoration.
+    pub paused_jmp_buf: UnsafeCell<[u8; 256]>,
 }
 
 // The `VMStoreContext` type is a pod-type with no destructor, and we don't
@@ -1143,6 +1146,7 @@ impl Default for VMStoreContext {
             last_wasm_entry_fp: UnsafeCell::new(0),
             paused_pc: UnsafeCell::new(0),
             paused_fp: UnsafeCell::new(0),
+            paused_jmp_buf: UnsafeCell::new([0u8; 256]),
         }
     }
 }

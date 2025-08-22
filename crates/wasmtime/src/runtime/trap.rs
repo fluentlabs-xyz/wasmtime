@@ -96,10 +96,19 @@ pub(crate) fn from_runtime_box(
             // Check if this is a PauseExecution trap from a host function
             if let Some(trap_env) = error.downcast_ref::<wasmtime_environ::Trap>() {
                 if *trap_env == wasmtime_environ::Trap::PauseExecution {
-                    // PauseExecution should not unwind
-                    // For host function PauseExecution traps, we use a fake PC to avoid backtrace issues
-                    store.pause_execution(1, 1); // Use 1 instead of 0 to avoid assertion failures
-                    // Return the PauseExecution error directly without backtrace
+                    // For host function PauseExecution, we need to manually set the paused state
+                    // and capture the current jmp_buf for native stack restoration
+                    unsafe {
+                        let vm_context = store.vm_store_context();
+                        let last_pc = *vm_context.last_wasm_exit_pc.get();
+                        let last_fp = *vm_context.last_wasm_exit_fp.get();
+                        
+                        // Set paused state - use 1 as fallback to avoid 0 values
+                        *vm_context.paused_pc.get() = if last_pc != 0 { last_pc } else { 1 };
+                        *vm_context.paused_fp.get() = if last_fp != 0 { last_fp } else { 1 };
+                        
+                        // jmp_buf should already be captured by Caller::pause_execution() before the trap
+                    }
                     return wasmtime_environ::Trap::PauseExecution.into();
                 }
             }
@@ -122,9 +131,9 @@ pub(crate) fn from_runtime_box(
             (err, Some(pc))
         }
         crate::runtime::vm::TrapReason::Wasm(trap_code) => (trap_code.into(), None),
-        crate::runtime::vm::TrapReason::PauseExecution { pc, fp } => {
-            store.pause_execution(pc, fp);
-            (wasmtime_environ::Trap::PauseExecution.into(), None) // Don't pass pc for backtrace to avoid assertion
+        crate::runtime::vm::TrapReason::PauseExecution { pc: _, fp: _ } => {
+            // The trap handler already stored PC/FP in VMStoreContext
+            (wasmtime_environ::Trap::PauseExecution.into(), None)
         }
     };
 

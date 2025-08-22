@@ -692,6 +692,27 @@ impl CallThreadState {
         traphandlers::wasmtime_longjmp(self.jmp_buf.get());
     }
 
+    /// Resume execution by performing a longjmp to the provided jmp_buf.
+    /// This is used for pause/resume functionality to restore native stack state.
+    ///
+    /// # Unsafety
+    ///
+    /// This function is not safe if the corresponding setjmp wasn't already
+    /// called. Additionally this isn't safe as it will skip all Rust
+    /// destructors on the stack, if there are any.
+    #[cfg(has_host_compiler_backend)]
+    pub(crate) unsafe fn resume_with_jmp_buf(jmp_buf: *const u8) -> ! {
+        debug_assert!(!jmp_buf.is_null());
+        debug_assert!(jmp_buf != CallThreadState::JMP_BUF_INTERPRETER_SENTINEL);
+        traphandlers::wasmtime_longjmp(jmp_buf);
+    }
+
+    /// Get the current jmp_buf for pause/resume functionality.
+    /// This allows external code to capture the native stack state.
+    pub(crate) fn get_jmp_buf(&self) -> *const u8 {
+        self.jmp_buf.get()
+    }
+
     fn capture_backtrace(
         &self,
         limits: *const VMStoreContext,
@@ -769,12 +790,20 @@ impl CallThreadState {
 
         // PauseExecution should not unwind
         if trap == wasmtime_environ::Trap::PauseExecution {
-            // Save pause state in VMStoreContext
+            // Save pause state in VMStoreContext including the jmp_buf for native stack restoration
             unsafe {
                 let store_ptr = self.vm_store_context.as_ptr();
                 if !store_ptr.is_null() {
-                    *(*store_ptr).paused_pc.get() = if regs.pc != 0 { regs.pc } else { 1 };
-                    *(*store_ptr).paused_fp.get() = if regs.fp != 0 { regs.fp } else { 1 };
+                    let final_pc = if regs.pc != 0 { regs.pc } else { 1 };
+                    let final_fp = if regs.fp != 0 { regs.fp } else { 1 };
+                    *(*store_ptr).paused_pc.get() = final_pc;
+                    *(*store_ptr).paused_fp.get() = final_fp;
+                    // Save the current jmp_buf content for native stack restoration
+                    let jmp_buf_ptr = self.jmp_buf.get();
+                    if !jmp_buf_ptr.is_null() {
+                        // Copy the jmp_buf content to avoid use-after-free
+                        std::ptr::copy_nonoverlapping(jmp_buf_ptr, (*(*store_ptr).paused_jmp_buf.get()).as_mut_ptr(), 256);
+                    }
                 }
             }
             return TrapTest::TrapNoUnwind;

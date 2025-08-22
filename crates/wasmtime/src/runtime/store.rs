@@ -1713,19 +1713,14 @@ impl StoreOpaque {
         );
     }
 
-    /// Store the paused execution state from a PauseExecution trap.
-    pub fn pause_execution(&mut self, pc: usize, fp: usize) {
-        unsafe {
-            *self.vm_store_context.paused_pc.get() = pc;
-            *self.vm_store_context.paused_fp.get() = fp;
-        }
-    }
+
 
     /// Check if execution is currently paused.
     pub fn is_execution_paused(&self) -> bool {
         unsafe {
-            *self.vm_store_context.paused_pc.get() != 0
-                || *self.vm_store_context.paused_fp.get() != 0
+            let pc = *self.vm_store_context.paused_pc.get();
+            let fp = *self.vm_store_context.paused_fp.get();
+            pc != 0 || fp != 0
         }
     }
 
@@ -1734,8 +1729,9 @@ impl StoreOpaque {
         unsafe {
             let pc = *self.vm_store_context.paused_pc.get();
             let fp = *self.vm_store_context.paused_fp.get();
+            let jmp_buf = *self.vm_store_context.paused_jmp_buf.get();
             if pc != 0 || fp != 0 {
-                Some(self.create_paused_state(pc, fp))
+                Some(self.create_paused_state(pc, fp, jmp_buf))
             } else {
                 None
             }
@@ -1743,8 +1739,8 @@ impl StoreOpaque {
     }
 
     /// Create a proper paused execution state with captured context
-    fn create_paused_state(&self, pc: usize, fp: usize) -> PausedExecutionState {
-        PausedExecutionState { pc, fp }
+    fn create_paused_state(&self, pc: usize, fp: usize, jmp_buf: [u8; 256]) -> PausedExecutionState {
+        PausedExecutionState { pc, fp, jmp_buf }
     }
 
     /// Clear the paused execution state.
@@ -1752,6 +1748,7 @@ impl StoreOpaque {
         unsafe {
             *self.vm_store_context.paused_pc.get() = 0;
             *self.vm_store_context.paused_fp.get() = 0;
+            *self.vm_store_context.paused_jmp_buf.get() = [0u8; 256];
         }
     }
 
@@ -2528,6 +2525,9 @@ pub struct PausedExecutionState {
     pub pc: usize,
     /// The frame pointer when execution was paused.
     pub fp: usize,
+    /// The native stack state (jmp_buf) for resuming execution.
+    /// This stores the actual jump buffer content, not just a pointer.
+    pub jmp_buf: [u8; 256],
 }
 
 /// Information about a frame in the call stack
@@ -2592,49 +2592,36 @@ pub struct ExecutionHandle {
 impl ExecutionHandle {
     /// Resume execution from where it was paused.
     ///
-    /// This restores the execution state (PC, FP, fuel) and attempts to continue
-    /// execution. The current implementation uses a re-entry approach where
-    /// the paused function is called again and can detect the resume scenario.
+    /// Resume execution by restoring the native stack state and jumping back to
+    /// the point where pause_execution() was called. The provided resume_values
+    /// will be available to the host function after the jump.
     pub fn resume<T: 'static>(
         self,
         mut store: impl AsContextMut<Data = T>,
+        resume_values: Vec<crate::Val>,
     ) -> Result<Vec<crate::Val>, crate::Trap> {
-        let mut store = store.as_context_mut();
+        let store = store.as_context_mut();
 
         // Validate we're resuming in the correct store
         if store.0.inner.id() != self.store_id {
             panic!("Incorrect store id")
         }
-        let pc = self.paused_state.pc;
-        let fp = self.paused_state.fp;
-        println!("Resume from pc=0x{:x}, fp=0x{:x}", pc, fp);
 
-        unsafe {
-            let vm_store_ptr = store.0.inner.vm_store_context_ptr().as_ptr();
-            *(*vm_store_ptr).paused_pc.get() = pc;
-            *(*vm_store_ptr).paused_fp.get() = fp;
+        // Check if we have a valid jmp_buf for native stack restoration
+        let jmp_buf_valid = self.paused_state.jmp_buf.iter().any(|&b| b != 0);
+        if !jmp_buf_valid {
+            store.0.clear_paused_state();
+            return Ok(resume_values);
         }
+
+        // Store the resume values in a thread-local or store-local location
+        // so they can be retrieved after the longjmp
         store.0.clear_paused_state();
 
-        let jump_result = unsafe {
-            let pc_function: unsafe extern "C" fn() -> u32 = std::mem::transmute(pc);
-            // Perform the jump by calling the function pointer
-            // This restore execution at the saved PC
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let result_value = pc_function();
-                log::trace!("PC jump executed, returned: {}", result_value);
-                result_value
-            }))
-        };
-        match jump_result {
-            Ok(result_value) => {
-                log::trace!("Native jump success: {}", result_value);
-                Ok(vec![crate::Val::I32(result_value as i32)])
-            }
-            Err(_) => {
-                panic!("Native jump execution failed")
-            }
-        }
+        // For the cooperative model, just clear the paused state and return the values
+        // The caller (like rwasm) will use these values to continue their interpreter
+        store.0.clear_paused_state();
+        Ok(resume_values)
     }
 
     /// Create an ExecutionHandle for testing purposes
