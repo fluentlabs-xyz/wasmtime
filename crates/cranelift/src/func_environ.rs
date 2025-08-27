@@ -3129,9 +3129,6 @@ impl FuncEnvironment<'_> {
         if self.tunables.consume_fuel {
             self.fuel_before_op(op, builder, state.reachable());
         }
-        if self.tunables.deterministic_interrupts {
-            self.guard_conditional_trap(builder, crate::TRAP_PAUSE_EXECUTION);
-        }
         Ok(())
     }
 
@@ -3783,26 +3780,6 @@ impl FuncEnvironment<'_> {
     /// Returns whether translation is happening for Pulley bytecode.
     pub fn is_pulley(&self) -> bool {
         self.isa.triple().is_pulley()
-    }
-
-    /// Conditionally guard against a trap based on runtime configuration.
-    ///
-    /// Only `Trap::PauseExecution` should not unwind - all others should trap normally.
-    fn guard_conditional_trap(&mut self, builder: &mut FunctionBuilder, trap_code: ir::TrapCode) {
-        if self.clif_instruction_traps_enabled() {
-            return;
-        }
-
-        // Convert Cranelift TrapCode to Wasmtime Trap enum
-        let env_trap = match crate::clif_trap_to_env_trap(trap_code) {
-            Some(trap) => trap,
-            None => return, // Internal traps can't be configured
-        };
-        if env_trap == wasmtime_environ::Trap::PauseExecution {
-            return;
-        }
-
-        self.trap(builder, trap_code);
     }
 }
 
