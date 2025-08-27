@@ -352,7 +352,6 @@ pub struct StoreOpaque {
     // until the reserve is empty.
     fuel_reserve: u64,
     fuel_yield_interval: Option<NonZeroU64>,
-
     /// Indexed data within this `Store`, used to store information about
     /// globals, functions, memories, etc.
     store_data: StoreData,
@@ -1712,8 +1711,6 @@ impl StoreOpaque {
             trap
         );
     }
-
-
 
     /// Check if execution is currently paused.
     pub fn is_execution_paused(&self) -> bool {
