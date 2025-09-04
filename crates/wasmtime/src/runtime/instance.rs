@@ -6,10 +6,7 @@ use crate::runtime::vm::{
 };
 use crate::store::{AllocateInstanceKind, InstanceId, StoreInstanceId, StoreOpaque};
 use crate::types::matching;
-use crate::{
-    AsContextMut, Engine, Export, Extern, Func, Global, Memory, Module, ModuleExport, SharedMemory,
-    StoreContext, StoreContextMut, Table, Tag, TypedFunc,
-};
+use crate::{AsContext, AsContextMut, Engine, Export, Extern, Func, Global, Memory, Module, ModuleExport, SharedMemory, StoreContext, StoreContextMut, Table, Tag, TypedFunc};
 use alloc::sync::Arc;
 use core::ptr::NonNull;
 use wasmparser::WasmFeatures;
@@ -392,8 +389,8 @@ impl Instance {
     /// lazily populated, and we cache them as they are accessed. This makes
     /// instantiating a module faster, but also means this method requires a
     /// mutable context.
-    pub fn get_export(&self, mut store: impl AsContextMut, name: &str) -> Option<Extern> {
-        let store = store.as_context_mut().0;
+    pub fn get_export(&self, store: impl AsContext, name: &str) -> Option<Extern> {
+        let store = store.as_context().0;
         let entity = *store[self.id].env_module().exports.get(name)?;
         Some(self._get_export(store, entity))
     }
