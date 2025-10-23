@@ -1,5 +1,5 @@
 [package]
-name = "wasmtime"
+name = "wasmtime-rwasm"
 version.workspace = true
 authors.workspace = true
 description = "High-level API to expose the Wasmtime runtime"
