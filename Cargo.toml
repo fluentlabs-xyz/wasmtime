@@ -4,9 +4,10 @@ version.workspace = true
 authors.workspace = true
 description = "Command-line interface for Wasmtime"
 license = "Apache-2.0 WITH LLVM-exception"
+documentation = "https://bytecodealliance.github.io/wasmtime/cli.html"
 categories = ["wasm"]
 keywords = ["webassembly", "wasm"]
-repository = "https://github.com/fluentlabs-xyz/wasmtime"
+repository = "https://github.com/bytecodealliance/wasmtime"
 readme = "README.md"
 edition.workspace = true
 default-run = "wasmtime"
@@ -172,9 +173,7 @@ exclude = [
 
 [workspace.package]
 version = "34.0.1"
-authors = [
-    "Dmitry Savonin <dmitry@fluentlabs.xyz>",
-]
+authors = ["The Wasmtime Project Developers"]
 edition = "2024"
 # Wasmtime's current policy is that this number can be no larger than the
 # current stable release of Rust minus 2.
@@ -218,11 +217,11 @@ from_over_into = 'warn'
 [workspace.dependencies]
 arbitrary = { version = "1.4.0" }
 wasmtime-wmemcheck = { path = "crates/wmemcheck", version = "=34.0.1" }
-wasmtime = { path = "crates/wasmtime", package = "wasmtime-rwasm", version = "34.0.1", default-features = false }
+wasmtime = { path = "crates/wasmtime", version = "34.0.1", default-features = false }
 wasmtime-c-api-macros = { path = "crates/c-api-macros", version = "=34.0.1" }
 wasmtime-cache = { path = "crates/cache", version = "=34.0.1" }
 wasmtime-cli-flags = { path = "crates/cli-flags", version = "=34.0.1" }
-wasmtime-cranelift = { path = "crates/cranelift", package = "wasmtime-rwasm-cranelift", version = "=34.0.1" }
+wasmtime-cranelift = { path = "crates/cranelift", version = "=34.0.1" }
 wasmtime-winch = { path = "crates/winch", version = "=34.0.1" }
 wasmtime-environ = { path = "crates/environ", version = "=34.0.1" }
 wasmtime-explorer = { path = "crates/explorer", version = "=34.0.1" }

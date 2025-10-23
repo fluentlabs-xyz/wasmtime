@@ -1,10 +1,11 @@
 [package]
-name = "wasmtime-rwasm-cranelift"
+name = "wasmtime-cranelift"
 version.workspace = true
 authors.workspace = true
 description = "Integration between Cranelift and Wasmtime"
 license = "Apache-2.0 WITH LLVM-exception"
-repository = "https://github.com/fluentlabs-xyz/wasmtime"
+repository = "https://github.com/bytecodealliance/wasmtime"
+documentation = "https://docs.rs/wasmtime-cranelift/"
 categories = ["wasm"]
 keywords = ["webassembly", "wasm"]
 edition.workspace = true

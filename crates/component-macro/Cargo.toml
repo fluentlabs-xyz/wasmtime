@@ -29,7 +29,7 @@ wasmtime-wit-bindgen = { workspace = true }
 wit-parser = { workspace = true }
 
 [dev-dependencies]
-wasmtime = { path = '../wasmtime', package = "wasmtime-rwasm", features = ['component-model', 'component-model-async'] }
+wasmtime = { path = '../wasmtime', features = ['component-model', 'component-model-async'] }
 wasmtime-wit-bindgen = { workspace = true, features = ['component-model-async'] }
 component-macro-test-helpers = { path = 'test-helpers' }
 tracing = { workspace = true }
