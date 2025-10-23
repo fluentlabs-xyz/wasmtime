@@ -4,10 +4,9 @@ version.workspace = true
 authors.workspace = true
 description = "Command-line interface for Wasmtime"
 license = "Apache-2.0 WITH LLVM-exception"
-documentation = "https://bytecodealliance.github.io/wasmtime/cli.html"
 categories = ["wasm"]
 keywords = ["webassembly", "wasm"]
-repository = "https://github.com/bytecodealliance/wasmtime"
+repository = "https://github.com/fluentlabs-xyz/wasmtime"
 readme = "README.md"
 edition.workspace = true
 default-run = "wasmtime"
@@ -173,7 +172,9 @@ exclude = [
 
 [workspace.package]
 version = "34.0.1"
-authors = ["The Wasmtime Project Developers"]
+authors = [
+    "Dmitry Savonin <dmitry@fluentlabs.xyz>",
+]
 edition = "2024"
 # Wasmtime's current policy is that this number can be no larger than the
 # current stable release of Rust minus 2.
