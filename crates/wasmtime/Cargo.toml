@@ -1,11 +1,10 @@
 [package]
-name = "wasmtime"
+name = "wasmtime-rwasm"
 version.workspace = true
 authors.workspace = true
 description = "High-level API to expose the Wasmtime runtime"
-documentation = "https://docs.rs/wasmtime"
 license = "Apache-2.0 WITH LLVM-exception"
-repository = "https://github.com/bytecodealliance/wasmtime"
+repository = "https://github.com/fluentlabs-xyz/wasmtime"
 readme = "README.md"
 edition.workspace = true
 rust-version.workspace = true
