@@ -21,11 +21,11 @@ use smallvec::SmallVec;
 use std::mem;
 use wasmparser::{Operator, WasmFeatures};
 use wasmtime_environ::{
-    BuiltinFunctionIndex, DataIndex, ElemIndex, EngineOrModuleTypeIndex, FuncIndex, GlobalIndex,
-    IndexType, Memory, MemoryIndex, Module, ModuleInternedTypeIndex, ModuleTranslation,
-    ModuleTypesBuilder, PtrSize, Table, TableIndex, TripleExt, Tunables, TypeConvert, TypeIndex,
-    VMOffsets, WasmCompositeInnerType, WasmFuncType, WasmHeapTopType, WasmHeapType, WasmRefType,
-    WasmResult, WasmValType,
+    BuiltinFunctionIndex, DataIndex, ElemIndex, EngineOrModuleTypeIndex, EntityType, FuncIndex,
+    GlobalIndex, IndexType, Memory, MemoryIndex, Module, ModuleInternedTypeIndex,
+    ModuleTranslation, ModuleTypesBuilder, PtrSize, Table, TableIndex, TripleExt, Tunables,
+    TypeConvert, TypeIndex, VMOffsets, WasmCompositeInnerType, WasmFuncType, WasmHeapTopType,
+    WasmHeapType, WasmRefType, WasmResult, WasmValType,
 };
 use wasmtime_environ::{FUNCREF_INIT_BIT, FUNCREF_MASK};
 use wasmtime_math::f64_cvt_to_int_bounds;
@@ -368,9 +368,9 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
         &mut self,
         op: &Operator<'_>,
         builder: &mut FunctionBuilder<'_>,
-        reachable: bool,
+        state: &FuncTranslationState,
     ) {
-        if !reachable {
+        if !state.reachable {
             // In unreachable code we shouldn't have any leftover fuel we
             // haven't accounted for since the reason for us to become
             // unreachable should have already added it to `self.fuel_var`.
@@ -462,6 +462,40 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
             // which means it's effectively executing straight-line code. We'll
             // update the counter when exiting a block, but we shouldn't need to
             // do so upon entering a block.
+            _ => {}
+        }
+
+        match op {
+            Operator::Call { function_index } | Operator::ReturnCall { function_index } => {
+                if let Some((base_fuel, param_index, linear_fuel)) = self
+                    .module
+                    .imports()
+                    .filter(|(_, _, import)| matches!(import, EntityType::Function(_)))
+                    .skip(*function_index as usize)
+                    .next()
+                    .and_then(|(module_name, import_name, _)| {
+                        self.compiler
+                            .syscall_fuel_params
+                            .get(&(module_name.to_string(), import_name.to_string()))
+                    })
+                {
+                    if *base_fuel | *linear_fuel != 0 {
+                        self.fuel_consumed += *base_fuel as i64;
+                        self.fuel_increment_var(builder);
+
+                        if *linear_fuel != 0 {
+                            let params = state.peekn(*param_index as usize)[0];
+                            let params = builder
+                                .ins()
+                                .imul_imm(params, Imm64::new(*linear_fuel as i64));
+                            let fuel = builder.use_var(self.fuel_var);
+                            let fuel = builder.ins().iadd(fuel, params);
+                            builder.def_var(self.fuel_var, fuel);
+                        }
+                        self.fuel_save_from_var(builder);
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -3127,7 +3161,7 @@ impl FuncEnvironment<'_> {
         state: &FuncTranslationState,
     ) -> WasmResult<()> {
         if self.tunables.consume_fuel {
-            self.fuel_before_op(op, builder, state.reachable());
+            self.fuel_before_op(op, builder, state);
         }
         Ok(())
     }
