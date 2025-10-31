@@ -12,6 +12,7 @@ use object::write::{Object, SymbolId};
 use object::{Architecture, BinaryFormat, FileFlags};
 use std::any::Any;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt;
 use std::path;
 use std::sync::Arc;
@@ -398,4 +399,7 @@ pub trait Compiler: Send + Sync {
         // By default, an ISA cannot create a System V CIE.
         None
     }
+
+    /// Set syscall fuel params to compile for adding fuel charging while syscall
+    fn set_syscall_fuel_params(&mut self, syscall_fuel_params: HashMap<(String, String), (u64,u64,u64)>) {}
 }

@@ -70,6 +70,7 @@ pub struct Compiler {
     linkopts: LinkOptions,
     cache_store: Option<Arc<dyn CacheStore>>,
     clif_dir: Option<path::PathBuf>,
+    pub(crate) syscall_fuel_params: HashMap<(String, String), (u64,u64,u64)>,
     #[cfg(feature = "wmemcheck")]
     pub(crate) wmemcheck: bool,
 }
@@ -119,6 +120,7 @@ impl Compiler {
             linkopts,
             cache_store,
             clif_dir,
+            syscall_fuel_params: HashMap::new(),
             #[cfg(feature = "wmemcheck")]
             wmemcheck,
         }
@@ -181,6 +183,10 @@ impl Compiler {
 }
 
 impl wasmtime_environ::Compiler for Compiler {
+    fn set_syscall_fuel_params(&mut self, syscall_fuel_params: HashMap<(String, String), (u64,u64,u64)>) {
+        self.syscall_fuel_params = syscall_fuel_params
+    }
+
     fn compile_function(
         &self,
         translation: &ModuleTranslation<'_>,

@@ -115,7 +115,11 @@ impl Engine {
         }
 
         #[cfg(any(feature = "cranelift", feature = "winch"))]
-        let (config, compiler) = config.build_compiler(&tunables, features)?;
+        let (mut config, mut compiler) = config.build_compiler(&tunables, features)?;
+
+        if let Some(syscall_fuel_params) = config.syscall_fuel_params.take() {
+            compiler.set_syscall_fuel_params(syscall_fuel_params);
+        }
 
         Ok(Engine {
             inner: Arc::new(EngineInner {
