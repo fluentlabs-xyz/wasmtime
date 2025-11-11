@@ -7,7 +7,7 @@ use std::collections::HashMap;
 #[cfg(any(feature = "cache", feature = "cranelift", feature = "winch"))]
 use std::path::Path;
 use wasmparser::WasmFeatures;
-use wasmtime_environ::{ConfigTunables, TripleExt, Tunables};
+use wasmtime_environ::{ConfigTunables, SyscallFuelParams, SyscallName, TripleExt, Tunables};
 
 #[cfg(feature = "runtime")]
 use crate::memory::MemoryCreator;
@@ -164,7 +164,7 @@ pub struct Config {
     pub(crate) coredump_on_trap: bool,
     pub(crate) macos_use_mach_ports: bool,
     pub(crate) detect_host_feature: Option<fn(&str) -> Option<bool>>,
-    pub(crate) syscall_fuel_params: Option<HashMap<(String, String), (u64, u64, u64)>>,
+    pub(crate) syscall_fuel_params: Option<HashMap<SyscallName, SyscallFuelParams>>,
 }
 
 /// User-provided configuration for the compiler.
@@ -2589,7 +2589,7 @@ impl Config {
     /// Set syscall fuel params
     pub fn syscall_fuel_params(
         &mut self,
-        syscall_fuel_params: HashMap<(String, String), (u64, u64, u64)>,
+        syscall_fuel_params: HashMap<SyscallName, SyscallFuelParams>,
     ) -> &mut Self {
         self.syscall_fuel_params = Some(syscall_fuel_params);
         self

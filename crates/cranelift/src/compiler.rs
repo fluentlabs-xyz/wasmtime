@@ -30,7 +30,8 @@ use wasmtime_environ::{
     AddressMapSection, BuiltinFunctionIndex, CacheStore, CompileError, CompiledFunctionBody,
     DefinedFuncIndex, FlagValue, FunctionBodyData, FunctionLoc, HostCall, ModuleTranslation,
     ModuleTypesBuilder, PtrSize, RelocationTarget, StackMapSection, StaticModuleIndex,
-    TrapEncodingBuilder, TrapSentinel, TripleExt, Tunables, VMOffsets, WasmFuncType, WasmValType,
+    SyscallFuelParams, SyscallName, TrapEncodingBuilder, TrapSentinel, TripleExt, Tunables,
+    VMOffsets, WasmFuncType, WasmValType,
 };
 
 #[cfg(feature = "component-model")]
@@ -70,7 +71,7 @@ pub struct Compiler {
     linkopts: LinkOptions,
     cache_store: Option<Arc<dyn CacheStore>>,
     clif_dir: Option<path::PathBuf>,
-    pub(crate) syscall_fuel_params: HashMap<(String, String), (u64,u64,u64)>,
+    pub(crate) syscall_fuel_params: HashMap<SyscallName, SyscallFuelParams>,
     #[cfg(feature = "wmemcheck")]
     pub(crate) wmemcheck: bool,
 }
@@ -183,7 +184,10 @@ impl Compiler {
 }
 
 impl wasmtime_environ::Compiler for Compiler {
-    fn set_syscall_fuel_params(&mut self, syscall_fuel_params: HashMap<(String, String), (u64,u64,u64)>) {
+    fn set_syscall_fuel_params(
+        &mut self,
+        syscall_fuel_params: HashMap<SyscallName, SyscallFuelParams>,
+    ) {
         self.syscall_fuel_params = syscall_fuel_params
     }
 

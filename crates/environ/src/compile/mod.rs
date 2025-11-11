@@ -187,6 +187,26 @@ pub struct CompiledFunctionBody {
     pub needs_gc_heap: bool,
 }
 
+/// Fuel params for syscall
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SyscallFuelParams {
+    /// Base fuel
+    pub base_fuel: u64,
+    /// Index of syscall param for calculating linear fuel
+    pub param_index: u64,
+    /// Linear fuel
+    pub linear_fuel: u64,
+}
+
+/// Full name of syscall with module and function names
+#[derive(Eq, Hash, PartialEq, Clone)]
+pub struct SyscallName {
+    /// Syscall module name
+    pub module: String,
+    /// Syscall function name
+    pub name: String,
+}
+
 /// An implementation of a compiler which can compile WebAssembly functions to
 /// machine code and perform other miscellaneous tasks needed by the JIT runtime.
 pub trait Compiler: Send + Sync {
@@ -401,5 +421,9 @@ pub trait Compiler: Send + Sync {
     }
 
     /// Set syscall fuel params to compile for adding fuel charging while syscall
-    fn set_syscall_fuel_params(&mut self, syscall_fuel_params: HashMap<(String, String), (u64,u64,u64)>) {}
+    fn set_syscall_fuel_params(
+        &mut self,
+        _syscall_fuel_params: HashMap<SyscallName, SyscallFuelParams>,
+    ) {
+    }
 }

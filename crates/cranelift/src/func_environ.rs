@@ -23,9 +23,9 @@ use wasmparser::{Operator, WasmFeatures};
 use wasmtime_environ::{
     BuiltinFunctionIndex, DataIndex, ElemIndex, EngineOrModuleTypeIndex, EntityType, FuncIndex,
     GlobalIndex, IndexType, Memory, MemoryIndex, Module, ModuleInternedTypeIndex,
-    ModuleTranslation, ModuleTypesBuilder, PtrSize, Table, TableIndex, TripleExt, Tunables,
-    TypeConvert, TypeIndex, VMOffsets, WasmCompositeInnerType, WasmFuncType, WasmHeapTopType,
-    WasmHeapType, WasmRefType, WasmResult, WasmValType,
+    ModuleTranslation, ModuleTypesBuilder, PtrSize, SyscallFuelParams, SyscallName, Table,
+    TableIndex, TripleExt, Tunables, TypeConvert, TypeIndex, VMOffsets, WasmCompositeInnerType,
+    WasmFuncType, WasmHeapTopType, WasmHeapType, WasmRefType, WasmResult, WasmValType,
 };
 use wasmtime_environ::{FUNCREF_INIT_BIT, FUNCREF_MASK};
 use wasmtime_math::f64_cvt_to_int_bounds;
@@ -467,16 +467,21 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
 
         match op {
             Operator::Call { function_index } | Operator::ReturnCall { function_index } => {
-                if let Some((base_fuel, param_index, linear_fuel)) = self
+                if let Some(SyscallFuelParams {
+                    base_fuel,
+                    param_index,
+                    linear_fuel,
+                }) = self
                     .module
                     .imports()
                     .filter(|(_, _, import)| matches!(import, EntityType::Function(_)))
                     .skip(*function_index as usize)
                     .next()
                     .and_then(|(module_name, import_name, _)| {
-                        self.compiler
-                            .syscall_fuel_params
-                            .get(&(module_name.to_string(), import_name.to_string()))
+                        self.compiler.syscall_fuel_params.get(&SyscallName {
+                            module: module_name.to_string(),
+                            name: import_name.to_string(),
+                        })
                     })
                 {
                     if *base_fuel | *linear_fuel != 0 {
