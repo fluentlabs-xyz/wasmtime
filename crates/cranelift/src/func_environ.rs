@@ -490,6 +490,8 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
 
                         if *linear_fuel != 0 {
                             let params = state.peekn(*param_index as usize)[0];
+                            let params = builder.ins().iadd_imm(params, Imm64::new(31));
+                            let params = builder.ins().udiv_imm(params, Imm64::new(32));
                             let params = builder
                                 .ins()
                                 .imul_imm(params, Imm64::new(*linear_fuel as i64));
