@@ -11,7 +11,7 @@ use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::immediates::{Imm64, Offset32, V128Imm};
 use cranelift_codegen::ir::pcc::Fact;
 use cranelift_codegen::ir::types::*;
-use cranelift_codegen::ir::{self, types};
+use cranelift_codegen::ir::{self, TrapCode, types};
 use cranelift_codegen::ir::{ArgumentPurpose, ConstantData, Function, InstBuilder, MemFlags};
 use cranelift_codegen::isa::{TargetFrontendConfig, TargetIsa};
 use cranelift_entity::{EntityRef, PrimaryMap, SecondaryMap};
@@ -489,6 +489,24 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
                         self.fuel_increment_var(builder);
 
                         if *linear_fuel != 0 {
+                            const FUEL_MAX_LINEAR_X: i64 = 262_143; // 2^18 - 1
+                            let params = state.peekn(*param_index as usize)[0];
+                            let cmp = builder.ins().icmp_imm(
+                                IntCC::UnsignedGreaterThan,
+                                params,
+                                Imm64::new(FUEL_MAX_LINEAR_X),
+                            );
+                            let block_ok = builder.create_block();
+                            let block_trap = builder.create_block();
+                            builder.ins().brif(cmp, block_ok, &[], block_trap, &[]);
+
+                            builder.seal_block(block_trap);
+                            builder.switch_to_block(block_trap);
+                            builder.ins().trap(TrapCode::INTEGER_OVERFLOW);
+
+                            builder.seal_block(block_ok);
+                            builder.switch_to_block(block_ok);
+
                             let params = state.peekn(*param_index as usize)[0];
                             let params = builder.ins().iadd_imm(params, Imm64::new(31));
                             let params = builder.ins().udiv_imm(params, Imm64::new(32));
