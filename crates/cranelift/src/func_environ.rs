@@ -498,8 +498,7 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
                             );
                             let block_ok = builder.create_block();
                             let block_trap = builder.create_block();
-                            builder.ins().brif(cmp, block_ok, &[], block_trap, &[]);
-
+                            builder.ins().brif(cmp, block_trap, &[], block_ok, &[]);
                             builder.seal_block(block_trap);
                             builder.switch_to_block(block_trap);
                             builder.ins().trap(TrapCode::INTEGER_OVERFLOW);
