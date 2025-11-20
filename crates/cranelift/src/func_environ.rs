@@ -469,7 +469,7 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
             Operator::Call { function_index } | Operator::ReturnCall { function_index } => {
                 if let Some(SyscallFuelParams {
                     base_fuel,
-                    param_index,
+                    linear_param_index,
                     linear_fuel,
                 }) = self
                     .module
@@ -478,22 +478,25 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
                     .skip(*function_index as usize)
                     .next()
                     .and_then(|(module_name, import_name, _)| {
-                        self.compiler.syscall_fuel_params.get(&SyscallName {
-                            module: module_name.to_string(),
-                            name: import_name.to_string(),
-                        })
+                        self.compiler
+                            .syscall_fuel_params
+                            .get(&SyscallName {
+                                module: module_name.to_string(),
+                                name: import_name.to_string(),
+                            })
+                            .cloned()
                     })
                 {
-                    if *base_fuel | *linear_fuel != 0 {
-                        self.fuel_consumed += *base_fuel as i64;
+                    if base_fuel | linear_fuel != 0 {
+                        self.fuel_consumed += base_fuel as i64;
                         self.fuel_increment_var(builder);
 
-                        if *linear_fuel != 0 {
+                        if linear_fuel != 0 {
                             const FUEL_MAX_LINEAR_X: i64 = 262_143; // 2^18 - 1
-                            let params = state.peekn(*param_index as usize)[0];
+                            let linear_param = state.peekn(linear_param_index as usize)[0];
                             let cmp = builder.ins().icmp_imm(
                                 IntCC::UnsignedGreaterThan,
-                                params,
+                                linear_param,
                                 Imm64::new(FUEL_MAX_LINEAR_X),
                             );
                             let block_ok = builder.create_block();
@@ -506,14 +509,13 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
                             builder.seal_block(block_ok);
                             builder.switch_to_block(block_ok);
 
-                            let params = state.peekn(*param_index as usize)[0];
-                            let params = builder.ins().iadd_imm(params, Imm64::new(31));
-                            let params = builder.ins().udiv_imm(params, Imm64::new(32));
-                            let params = builder
+                            let new_value = builder.ins().iadd_imm(linear_param, Imm64::new(31));
+                            let new_value = builder.ins().udiv_imm(new_value, Imm64::new(32));
+                            let new_value = builder
                                 .ins()
-                                .imul_imm(params, Imm64::new(*linear_fuel as i64));
+                                .imul_imm(new_value, Imm64::new(linear_fuel as i64));
                             let fuel = builder.use_var(self.fuel_var);
-                            let fuel = builder.ins().iadd(fuel, params);
+                            let fuel = builder.ins().iadd(fuel, new_value);
                             builder.def_var(self.fuel_var, fuel);
                         }
                         self.fuel_save_from_var(builder);

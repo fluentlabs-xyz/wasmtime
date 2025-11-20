@@ -188,12 +188,12 @@ pub struct CompiledFunctionBody {
 }
 
 /// Fuel params for syscall
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct SyscallFuelParams {
     /// Base fuel
     pub base_fuel: u64,
     /// Index of syscall param for calculating linear fuel
-    pub param_index: u64,
+    pub linear_param_index: u64,
     /// Linear fuel
     pub linear_fuel: u64,
 }
