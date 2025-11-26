@@ -11,7 +11,7 @@ use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::immediates::{Imm64, Offset32, V128Imm};
 use cranelift_codegen::ir::pcc::Fact;
 use cranelift_codegen::ir::types::*;
-use cranelift_codegen::ir::{self, TrapCode, types};
+use cranelift_codegen::ir::{self, TrapCode, Value, types};
 use cranelift_codegen::ir::{ArgumentPurpose, ConstantData, Function, InstBuilder, MemFlags};
 use cranelift_codegen::isa::{TargetFrontendConfig, TargetIsa};
 use cranelift_entity::{EntityRef, PrimaryMap, SecondaryMap};
@@ -22,10 +22,11 @@ use std::mem;
 use wasmparser::{Operator, WasmFeatures};
 use wasmtime_environ::{
     BuiltinFunctionIndex, DataIndex, ElemIndex, EngineOrModuleTypeIndex, EntityType, FuncIndex,
-    GlobalIndex, IndexType, Memory, MemoryIndex, Module, ModuleInternedTypeIndex,
-    ModuleTranslation, ModuleTypesBuilder, PtrSize, SyscallFuelParams, SyscallName, Table,
-    TableIndex, TripleExt, Tunables, TypeConvert, TypeIndex, VMOffsets, WasmCompositeInnerType,
-    WasmFuncType, WasmHeapTopType, WasmHeapType, WasmRefType, WasmResult, WasmValType,
+    GlobalIndex, IndexType, LinearFuelParams, Memory, MemoryIndex, Module, ModuleInternedTypeIndex,
+    ModuleTranslation, ModuleTypesBuilder, PtrSize, QuadraticFuelParams, SyscallFuelParams,
+    SyscallName, Table, TableIndex, TripleExt, Tunables, TypeConvert, TypeIndex, VMOffsets,
+    WasmCompositeInnerType, WasmFuncType, WasmHeapTopType, WasmHeapType, WasmRefType, WasmResult,
+    WasmValType,
 };
 use wasmtime_environ::{FUNCREF_INIT_BIT, FUNCREF_MASK};
 use wasmtime_math::f64_cvt_to_int_bounds;
@@ -467,11 +468,7 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
 
         match op {
             Operator::Call { function_index } | Operator::ReturnCall { function_index } => {
-                if let Some(SyscallFuelParams {
-                    base_fuel,
-                    linear_param_index,
-                    linear_fuel,
-                }) = self
+                match self
                     .module
                     .imports()
                     .filter(|(_, _, import)| matches!(import, EntityType::Function(_)))
@@ -485,41 +482,98 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
                                 name: import_name.to_string(),
                             })
                             .cloned()
-                    })
-                {
-                    if base_fuel | linear_fuel != 0 {
+                    }) {
+                    Some(SyscallFuelParams::Const(base)) => {
+                        self.fuel_consumed += base as i64;
+                        self.fuel_increment_var(builder);
+                        self.fuel_save_from_var(builder);
+                    }
+                    Some(SyscallFuelParams::LinearFuel(LinearFuelParams {
+                        base_fuel,
+                        linear_param_index,
+                        word_cost,
+                    })) => {
                         self.fuel_consumed += base_fuel as i64;
                         self.fuel_increment_var(builder);
 
-                        if linear_fuel != 0 {
-                            const FUEL_MAX_LINEAR_X: i64 = 262_143; // 2^18 - 1
-                            let linear_param = state.peekn(linear_param_index as usize)[0];
-                            let cmp = builder.ins().icmp_imm(
-                                IntCC::UnsignedGreaterThan,
-                                linear_param,
-                                Imm64::new(FUEL_MAX_LINEAR_X),
-                            );
-                            let block_ok = builder.create_block();
-                            let block_trap = builder.create_block();
-                            builder.ins().brif(cmp, block_trap, &[], block_ok, &[]);
-                            builder.seal_block(block_trap);
-                            builder.switch_to_block(block_trap);
-                            builder.ins().trap(TrapCode::INTEGER_OVERFLOW);
+                        const FUEL_MAX_LINEAR_X: i64 = 134_217_728; // 2^27
+                        let linear_param = state.peekn(linear_param_index as usize)[0];
+                        let cmp = builder.ins().icmp_imm(
+                            IntCC::UnsignedGreaterThan,
+                            linear_param,
+                            Imm64::new(FUEL_MAX_LINEAR_X),
+                        );
+                        let block_ok = builder.create_block();
+                        let block_trap = builder.create_block();
+                        builder.ins().brif(cmp, block_trap, &[], block_ok, &[]);
+                        builder.seal_block(block_trap);
+                        builder.switch_to_block(block_trap);
+                        builder.ins().trap(TrapCode::INTEGER_OVERFLOW);
 
-                            builder.seal_block(block_ok);
-                            builder.switch_to_block(block_ok);
+                        builder.seal_block(block_ok);
+                        builder.switch_to_block(block_ok);
 
-                            let new_value = builder.ins().iadd_imm(linear_param, Imm64::new(31));
-                            let new_value = builder.ins().udiv_imm(new_value, Imm64::new(32));
-                            let new_value = builder
-                                .ins()
-                                .imul_imm(new_value, Imm64::new(linear_fuel as i64));
-                            let fuel = builder.use_var(self.fuel_var);
-                            let fuel = builder.ins().iadd(fuel, new_value);
-                            builder.def_var(self.fuel_var, fuel);
-                        }
+                        let new_value = builder.ins().iadd_imm(linear_param, Imm64::new(31));
+                        let new_value = builder.ins().udiv_imm(new_value, Imm64::new(32));
+                        let new_value = builder
+                            .ins()
+                            .imul_imm(new_value, Imm64::new(word_cost as i64));
+                        let fuel = builder.use_var(self.fuel_var);
+                        let fuel = builder.ins().iadd(fuel, new_value);
+                        builder.def_var(self.fuel_var, fuel);
                         self.fuel_save_from_var(builder);
                     }
+                    Some(SyscallFuelParams::QuadraticFuel(QuadraticFuelParams {
+                        local_depth,
+                        word_cost,
+                        divisor,
+                    })) => {
+                        const FUEL_MAX_QUADRATIC_X: i64 = 1_310_720;
+
+                        let local_depth = state.peekn(local_depth as usize)[0];
+                        let cmp = builder.ins().icmp_imm(
+                            IntCC::UnsignedGreaterThan,
+                            local_depth,
+                            Imm64::new(FUEL_MAX_QUADRATIC_X),
+                        );
+                        let block_ok = builder.create_block();
+                        let block_trap = builder.create_block();
+                        builder.ins().brif(cmp, block_trap, &[], block_ok, &[]);
+                        builder.seal_block(block_trap);
+                        builder.switch_to_block(block_trap);
+                        builder.ins().trap(TrapCode::INTEGER_OVERFLOW);
+
+                        builder.seal_block(block_ok);
+                        builder.switch_to_block(block_ok);
+
+                        let compute_words = |builder: &mut FunctionBuilder, value: Value| {
+                            let t = builder.ins().iadd_imm(value, Imm64::new(31));
+                            builder.ins().udiv_imm(t, Imm64::new(32))
+                        };
+
+                        let linear_words = compute_words(builder, local_depth);
+
+                        let linear_part = builder
+                            .ins()
+                            .imul_imm(linear_words, Imm64::new(word_cost as i64));
+
+                        let w1 = compute_words(builder, local_depth);
+                        let w2 = compute_words(builder, local_depth);
+
+                        let quadratic_mul = builder.ins().imul(w1, w2);
+
+                        let quadratic_div = builder
+                            .ins()
+                            .udiv_imm(quadratic_mul, Imm64::new(divisor as i64));
+
+                        let sum = builder.ins().iadd(linear_part, quadratic_div);
+
+                        let fuel = builder.use_var(self.fuel_var);
+                        let fuel = builder.ins().iadd(fuel, sum);
+                        builder.def_var(self.fuel_var, fuel);
+                        self.fuel_save_from_var(builder)
+                    }
+                    _ => {}
                 }
             }
             _ => {}

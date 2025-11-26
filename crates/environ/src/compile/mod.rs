@@ -188,14 +188,39 @@ pub struct CompiledFunctionBody {
 }
 
 /// Fuel params for syscall
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct SyscallFuelParams {
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum SyscallFuelParams {
+    /// Fuel not charged
+    #[default]
+    None,
+    /// Const fuel charging
+    Const(u64),
+    /// Linear fuel charging
+    LinearFuel(LinearFuelParams),
+    /// Quadratic fuel charging
+    QuadraticFuel(QuadraticFuelParams),
+}
+
+/// Fuel params for linear case
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LinearFuelParams {
     /// Base fuel
     pub base_fuel: u64,
     /// Index of syscall param for calculating linear fuel
     pub linear_param_index: u64,
-    /// Linear fuel
-    pub linear_fuel: u64,
+    /// Word cost
+    pub word_cost: u64,
+}
+
+/// Fuel params for quadratic case
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct QuadraticFuelParams {
+    /// Local depth of parameters
+    pub local_depth: u64,
+    /// Word cost
+    pub word_cost: u64,
+    /// Divisor
+    pub divisor: u64,
 }
 
 /// Full name of syscall with module and function names

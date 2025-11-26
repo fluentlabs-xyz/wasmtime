@@ -31,7 +31,7 @@ pub use crate::runtime::code_memory::CustomCodeMemory;
 pub use wasmtime_cache::{Cache, CacheConfig};
 #[cfg(all(feature = "incremental-cache", feature = "cranelift"))]
 pub use wasmtime_environ::CacheStore;
-pub use wasmtime_environ::{SyscallFuelParams, SyscallName};
+pub use wasmtime_environ::{LinearFuelParams, QuadraticFuelParams, SyscallFuelParams, SyscallName};
 /// Represents the module instance allocation strategy to use.
 #[derive(Clone)]
 #[non_exhaustive]
