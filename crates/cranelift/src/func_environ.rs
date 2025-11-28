@@ -529,6 +529,7 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
                         divisor,
                     })) => {
                         const FUEL_MAX_QUADRATIC_X: i64 = 1_310_720;
+                        const FUEL_DENOM_RATE: i64 = 1000;
 
                         let local_depth = state.peekn(local_depth as usize)[0];
                         let cmp = builder.ins().icmp_imm(
@@ -568,8 +569,11 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
 
                         let sum = builder.ins().iadd(linear_part, quadratic_div);
 
+                        let fuel_after_rate =
+                            builder.ins().imul_imm(sum, Imm64::new(FUEL_DENOM_RATE));
+
                         let fuel = builder.use_var(self.fuel_var);
-                        let fuel = builder.ins().iadd(fuel, sum);
+                        let fuel = builder.ins().iadd(fuel, fuel_after_rate);
                         builder.def_var(self.fuel_var, fuel);
                         self.fuel_save_from_var(builder)
                     }
