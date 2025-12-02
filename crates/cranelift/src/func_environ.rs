@@ -530,9 +530,6 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
                         max_quadratic,
                         fuel_denom_rate,
                     })) => {
-                        const FUEL_MAX_QUADRATIC_X: i64 = 1_310_720;
-                        const FUEL_DENOM_RATE: i64 = 1000;
-
                         let local_depth = state.peekn(local_depth as usize)[0];
                         let cmp = builder.ins().icmp_imm(
                             IntCC::UnsignedGreaterThan,
