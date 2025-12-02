@@ -492,16 +492,16 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
                         base_fuel,
                         linear_param_index,
                         word_cost,
+                        max_linear,
                     })) => {
                         self.fuel_consumed += base_fuel as i64;
                         self.fuel_increment_var(builder);
 
-                        const FUEL_MAX_LINEAR_X: i64 = 134_217_728; // 2^27
                         let linear_param = state.peekn(linear_param_index as usize)[0];
                         let cmp = builder.ins().icmp_imm(
                             IntCC::UnsignedGreaterThan,
                             linear_param,
-                            Imm64::new(FUEL_MAX_LINEAR_X),
+                            Imm64::new(max_linear as i64),
                         );
                         let block_ok = builder.create_block();
                         let block_trap = builder.create_block();
@@ -527,6 +527,8 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
                         local_depth,
                         word_cost,
                         divisor,
+                        max_quadratic,
+                        fuel_denom_rate,
                     })) => {
                         const FUEL_MAX_QUADRATIC_X: i64 = 1_310_720;
                         const FUEL_DENOM_RATE: i64 = 1000;
@@ -535,7 +537,7 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
                         let cmp = builder.ins().icmp_imm(
                             IntCC::UnsignedGreaterThan,
                             local_depth,
-                            Imm64::new(FUEL_MAX_QUADRATIC_X),
+                            Imm64::new(max_quadratic as i64),
                         );
                         let block_ok = builder.create_block();
                         let block_trap = builder.create_block();
@@ -569,8 +571,9 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
 
                         let sum = builder.ins().iadd(linear_part, quadratic_div);
 
-                        let fuel_after_rate =
-                            builder.ins().imul_imm(sum, Imm64::new(FUEL_DENOM_RATE));
+                        let fuel_after_rate = builder
+                            .ins()
+                            .imul_imm(sum, Imm64::new(fuel_denom_rate as i64));
 
                         let fuel = builder.use_var(self.fuel_var);
                         let fuel = builder.ins().iadd(fuel, fuel_after_rate);

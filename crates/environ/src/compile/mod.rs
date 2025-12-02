@@ -210,6 +210,8 @@ pub struct LinearFuelParams {
     pub linear_param_index: u64,
     /// Word cost
     pub word_cost: u64,
+    /// Max linear param
+    pub max_linear: u64,
 }
 
 /// Fuel params for quadratic case
@@ -221,6 +223,10 @@ pub struct QuadraticFuelParams {
     pub word_cost: u64,
     /// Divisor
     pub divisor: u64,
+    /// Max quadratic param
+    pub max_quadratic: u64,
+    /// Fuel denomination rate
+    pub fuel_denom_rate: u64,
 }
 
 /// Full name of syscall with module and function names
