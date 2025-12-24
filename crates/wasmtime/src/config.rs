@@ -3,6 +3,7 @@ use alloc::sync::Arc;
 use bitflags::Flags;
 use core::fmt;
 use core::str::FromStr;
+use std::collections::HashMap;
 #[cfg(any(feature = "cache", feature = "cranelift", feature = "winch"))]
 use std::path::Path;
 use wasmparser::WasmFeatures;
@@ -30,7 +31,7 @@ pub use crate::runtime::code_memory::CustomCodeMemory;
 pub use wasmtime_cache::{Cache, CacheConfig};
 #[cfg(all(feature = "incremental-cache", feature = "cranelift"))]
 pub use wasmtime_environ::CacheStore;
-
+pub use wasmtime_environ::{LinearFuelParams, QuadraticFuelParams, SyscallFuelParams, SyscallName};
 /// Represents the module instance allocation strategy to use.
 #[derive(Clone)]
 #[non_exhaustive]
@@ -163,6 +164,7 @@ pub struct Config {
     pub(crate) coredump_on_trap: bool,
     pub(crate) macos_use_mach_ports: bool,
     pub(crate) detect_host_feature: Option<fn(&str) -> Option<bool>>,
+    pub(crate) syscall_fuel_params: Option<HashMap<SyscallName, SyscallFuelParams>>,
 }
 
 /// User-provided configuration for the compiler.
@@ -271,6 +273,7 @@ impl Config {
             detect_host_feature: Some(detect_host_feature),
             #[cfg(not(feature = "std"))]
             detect_host_feature: None,
+            syscall_fuel_params: None,
         };
         #[cfg(any(feature = "cranelift", feature = "winch"))]
         {
@@ -2580,6 +2583,15 @@ impl Config {
     /// **Note** Disabling this option is not compatible with the Winch compiler.
     pub fn signals_based_traps(&mut self, enable: bool) -> &mut Self {
         self.tunables.signals_based_traps = Some(enable);
+        self
+    }
+
+    /// Set syscall fuel params
+    pub fn syscall_fuel_params(
+        &mut self,
+        syscall_fuel_params: HashMap<SyscallName, SyscallFuelParams>,
+    ) -> &mut Self {
+        self.syscall_fuel_params = Some(syscall_fuel_params);
         self
     }
 }

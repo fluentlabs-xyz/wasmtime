@@ -12,6 +12,7 @@ use object::write::{Object, SymbolId};
 use object::{Architecture, BinaryFormat, FileFlags};
 use std::any::Any;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt;
 use std::path;
 use std::sync::Arc;
@@ -184,6 +185,57 @@ pub struct CompiledFunctionBody {
     /// Whether the compiled function needs a GC heap to run; that is, whether
     /// it reads a struct field, allocates, an array, or etc...
     pub needs_gc_heap: bool,
+}
+
+/// Fuel params for syscall
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum SyscallFuelParams {
+    /// Fuel not charged
+    #[default]
+    None,
+    /// Const fuel charging
+    Const(u64),
+    /// Linear fuel charging
+    LinearFuel(LinearFuelParams),
+    /// Quadratic fuel charging
+    QuadraticFuel(QuadraticFuelParams),
+}
+
+/// Fuel params for linear case
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LinearFuelParams {
+    /// Base fuel
+    pub base_fuel: u64,
+    /// Index of syscall param for calculating linear fuel
+    pub linear_param_index: u64,
+    /// Word cost
+    pub word_cost: u64,
+    /// Max linear param
+    pub max_linear: u64,
+}
+
+/// Fuel params for quadratic case
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct QuadraticFuelParams {
+    /// Local depth of parameters
+    pub local_depth: u64,
+    /// Word cost
+    pub word_cost: u64,
+    /// Divisor
+    pub divisor: u64,
+    /// Max quadratic param
+    pub max_quadratic: u64,
+    /// Fuel denomination rate
+    pub fuel_denom_rate: u64,
+}
+
+/// Full name of syscall with module and function names
+#[derive(Eq, Hash, PartialEq, Clone)]
+pub struct SyscallName {
+    /// Syscall module name
+    pub module: String,
+    /// Syscall function name
+    pub name: String,
 }
 
 /// An implementation of a compiler which can compile WebAssembly functions to
@@ -397,5 +449,12 @@ pub trait Compiler: Send + Sync {
     fn create_systemv_cie(&self) -> Option<gimli::write::CommonInformationEntry> {
         // By default, an ISA cannot create a System V CIE.
         None
+    }
+
+    /// Set syscall fuel params to compile for adding fuel charging while syscall
+    fn set_syscall_fuel_params(
+        &mut self,
+        _syscall_fuel_params: HashMap<SyscallName, SyscallFuelParams>,
+    ) {
     }
 }
