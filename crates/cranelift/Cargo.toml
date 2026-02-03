@@ -35,6 +35,9 @@ itertools = { workspace = true }
 pulley-interpreter = { workspace = true, optional = true }
 wasmtime-math = { workspace = true }
 
+# rwasm fuel policy
+rwasm-fuel-policy = { workspace = true }
+
 [features]
 all-arch = ["cranelift-codegen/all-arch"]
 host-arch = ["cranelift-codegen/host-arch"]

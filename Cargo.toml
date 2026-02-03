@@ -380,6 +380,9 @@ itertools = "0.14.0"
 base64 = "0.22.1"
 termcolor = "1.4.1"
 
+# rwasm specific
+rwasm-fuel-policy = { git = "https://github.com/fluentlabs-xyz/rwasm-fuel-policy.git", branch = "main", default-features = false }
+
 # =============================================================================
 #
 # Features for the Wasmtime CLI executable

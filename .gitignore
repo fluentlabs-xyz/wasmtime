@@ -34,3 +34,4 @@ testcase*.dna
 testcase*.json
 perf.data*
 .idea
+.DS_Store

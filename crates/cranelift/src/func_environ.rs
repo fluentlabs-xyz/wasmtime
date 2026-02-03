@@ -379,7 +379,7 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
             return;
         }
 
-        self.fuel_consumed += match op {
+        /*self.fuel_consumed += match op {
             // Nop and drop generate no code, so don't consume fuel for them.
             Operator::Nop | Operator::Drop => 0,
 
@@ -395,7 +395,8 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
 
             // everything else, just call it one operation.
             _ => 1,
-        };
+        };*/
+        self.fuel_consumed += rwasm_fuel_policy::fuel_for_operator(op) as i64;
 
         match op {
             // Exiting a function (via a return or unreachable) or otherwise
