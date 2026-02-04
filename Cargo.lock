@@ -2981,7 +2981,7 @@ dependencies = [
 [[package]]
 name = "rwasm-fuel-policy"
 version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/rwasm-fuel-policy.git?branch=main#78db3d8bc7ba19384a1bdc2c4b100343798acc24"
+source = "git+https://github.com/fluentlabs-xyz/rwasm-fuel-policy.git?branch=main#d5b63e2abdcb798c880aace25c0fdc7be6457742"
 dependencies = [
  "wasmparser 0.233.0",
 ]

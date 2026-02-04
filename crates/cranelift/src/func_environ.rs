@@ -511,13 +511,13 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
             }
             SyscallFuelParams::LinearFuel(LinearFuelParams {
                 base_fuel,
-                linear_param_index,
+                param_index,
                 word_cost,
             }) => {
                 self.fuel_consumed += *base_fuel as i64;
                 self.fuel_increment_var(builder);
 
-                let linear_param = state.peekn(*linear_param_index as usize)[0];
+                let linear_param = state.peekn(*param_index as usize)[0];
                 let cmp = builder.ins().icmp_imm(
                     IntCC::UnsignedGreaterThan,
                     linear_param,
