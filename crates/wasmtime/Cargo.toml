@@ -389,4 +389,4 @@ component-model-async = [
   "dep:futures"
 ]
 
-rwasm  = ["wasmtime-cranelift/rwasm"]
+disable-fpu  = ["wasmtime-cranelift/disable-fpu"]
