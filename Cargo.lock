@@ -3189,6 +3189,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rwasm-fuel-policy"
+version = "0.1.0"
+source = "git+https://github.com/fluentlabs-xyz/rwasm-fuel-policy.git?branch=main#7a671fd90530f1016252a7326bf6a6bcbaa758ec"
+dependencies = [
+ "wasmparser 0.243.0",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4509,6 +4517,7 @@ dependencies = [
  "rand 0.9.2",
  "rayon",
  "rustix 1.0.8",
+ "rwasm-fuel-policy",
  "semver",
  "serde",
  "serde_derive",
@@ -4692,6 +4701,7 @@ dependencies = [
  "object 0.37.3",
  "postcard",
  "rustc-demangle",
+ "rwasm-fuel-policy",
  "semver",
  "serde",
  "serde_derive",
@@ -4856,6 +4866,7 @@ dependencies = [
  "log",
  "object 0.37.3",
  "pulley-interpreter",
+ "rwasm-fuel-policy",
  "smallvec",
  "target-lexicon",
  "thiserror 2.0.17",

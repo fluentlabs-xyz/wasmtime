@@ -139,7 +139,15 @@ pub fn translate_operator(
         panic!("should always have operand types available for valid, reachable ops; op = {op:?}")
     });
 
+    #[cfg(feature = "disable-fpu")]
+    if rwasm_fuel_policy::is_rwasm_operator_disabled(op) {
+        environ.trap(builder, crate::TRAP_DISABLED_OPCODE);
+        state.reachable = false;
+        return Ok(());
+    }
+
     // This big match treats all Wasm code operators.
+    log::trace!("Translating Wasm opcode: {op:?}");
     match op {
         /********************************** Locals ****************************************
          *  `get_local` and `set_local` are treated as non-SSA variables and will completely

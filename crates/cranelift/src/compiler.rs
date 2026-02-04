@@ -1,17 +1,17 @@
-use crate::TRAP_INTERNAL_ASSERT;
 use crate::debug::DwarfSectionRelocTarget;
 use crate::func_environ::FuncEnvironment;
 use crate::translate::FuncTranslator;
-use crate::{BuiltinFunctionSignatures, builder::LinkOptions, wasm_call_signature};
-use crate::{CompiledFunction, ModuleTextBuilder, array_call_signature};
+use crate::TRAP_INTERNAL_ASSERT;
+use crate::{array_call_signature, CompiledFunction, ModuleTextBuilder};
+use crate::{builder::LinkOptions, wasm_call_signature, BuiltinFunctionSignatures};
 use cranelift_codegen::binemit::CodeOffset;
 use cranelift_codegen::inline::InlineCommand;
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{self, InstBuilder, MemFlags, UserExternalName, UserFuncName, Value};
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::isa::{
-    OwnedTargetIsa, TargetIsa,
-    unwind::{UnwindInfo, UnwindInfoKind},
+    unwind::{UnwindInfo, UnwindInfoKind}, OwnedTargetIsa,
+    TargetIsa,
 };
 use cranelift_codegen::print_errors::pretty_error;
 use cranelift_codegen::{
@@ -34,11 +34,11 @@ use wasmparser::{FuncValidatorAllocations, FunctionBody};
 use wasmtime_environ::error::{Context as _, Result};
 use wasmtime_environ::obj::{ELF_WASMTIME_EXCEPTIONS, ELF_WASMTIME_FRAMES};
 use wasmtime_environ::{
-    Abi, AddressMapSection, BuiltinFunctionIndex, CacheStore, CompileError, CompiledFunctionBody,
-    DefinedFuncIndex, FlagValue, FrameInstPos, FrameStackShape, FrameStateSlotBuilder,
-    FrameTableBuilder, FuncKey, FunctionBodyData, FunctionLoc, HostCall, InliningCompiler,
-    ModuleTranslation, ModuleTypesBuilder, PtrSize, StackMapSection, StaticModuleIndex,
-    TrapEncodingBuilder, TrapSentinel, TripleExt, Tunables, WasmFuncType, WasmValType, prelude::*,
+    prelude::*, Abi, AddressMapSection, BuiltinFunctionIndex, CacheStore, CompileError,
+    CompiledFunctionBody, DefinedFuncIndex, FlagValue, FrameInstPos, FrameStackShape,
+    FrameStateSlotBuilder, FrameTableBuilder, FuncKey, FunctionBodyData, FunctionLoc, HostCall,
+    InliningCompiler, ModuleTranslation, ModuleTypesBuilder, PtrSize, StackMapSection,
+    StaticModuleIndex, TrapEncodingBuilder, TrapSentinel, TripleExt, Tunables, WasmFuncType, WasmValType,
 };
 use wasmtime_unwinder::ExceptionTableBuilder;
 
@@ -86,6 +86,8 @@ pub struct Compiler {
     clif_dir: Option<path::PathBuf>,
     #[cfg(feature = "wmemcheck")]
     pub(crate) wmemcheck: bool,
+    pub(crate) syscall_fuel_params:
+        HashMap<rwasm_fuel_policy::SyscallName, rwasm_fuel_policy::SyscallFuelParams>,
 }
 
 impl Drop for Compiler {
@@ -137,6 +139,7 @@ impl Compiler {
             clif_dir,
             #[cfg(feature = "wmemcheck")]
             wmemcheck,
+            syscall_fuel_params: Default::default(),
         }
     }
 
@@ -224,6 +227,16 @@ fn box_dyn_any(x: impl Any + Send + Sync) -> Box<dyn Any + Send + Sync> {
 impl wasmtime_environ::Compiler for Compiler {
     fn inlining_compiler(&self) -> Option<&dyn wasmtime_environ::InliningCompiler> {
         Some(self)
+    }
+
+    fn set_syscall_fuel_params(
+        &mut self,
+        syscall_fuel_params: HashMap<
+            rwasm_fuel_policy::SyscallName,
+            rwasm_fuel_policy::SyscallFuelParams,
+        >,
+    ) {
+        self.syscall_fuel_params = syscall_fuel_params
     }
 
     fn compile_function(

@@ -24,7 +24,7 @@ impl<'a> Parse<'a> for FuelWast<'a> {
     }
 }
 
-#[wasmtime_test]
+#[wasmtime_test(strategies(only(CraneliftNative)))]
 #[cfg_attr(miri, ignore)]
 fn run(config: &mut Config) -> Result<()> {
     config.consume_fuel(true);
@@ -211,7 +211,7 @@ fn manual_fuel(config: &mut Config) -> Result<()> {
     Ok(())
 }
 
-#[wasmtime_test]
+#[wasmtime_test(strategies(only(CraneliftNative)))]
 #[cfg_attr(miri, ignore)]
 fn host_function_consumes_all(config: &mut Config) -> Result<()> {
     const FUEL: u64 = 10_000;
@@ -233,7 +233,7 @@ fn host_function_consumes_all(config: &mut Config) -> Result<()> {
     store.set_fuel(FUEL).unwrap();
     let func = Func::wrap(&mut store, |mut caller: Caller<'_, ()>| {
         let remaining = caller.get_fuel().unwrap();
-        assert_eq!(remaining, FUEL - 2);
+        assert_eq!(remaining, FUEL - 11);
         assert!(caller.set_fuel(1).is_ok());
     });
 

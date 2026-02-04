@@ -3,6 +3,7 @@ use alloc::sync::Arc;
 use bitflags::Flags;
 use core::fmt;
 use core::str::FromStr;
+use std::collections::HashMap;
 #[cfg(any(feature = "cache", feature = "cranelift", feature = "winch"))]
 use std::path::Path;
 pub use wasmparser::WasmFeatures;
@@ -165,6 +166,8 @@ pub struct Config {
     pub(crate) detect_host_feature: Option<fn(&str) -> Option<bool>>,
     pub(crate) x86_float_abi_ok: Option<bool>,
     pub(crate) shared_memory: bool,
+    pub(crate) syscall_fuel_params:
+        Option<HashMap<rwasm_fuel_policy::SyscallName, rwasm_fuel_policy::SyscallFuelParams>>,
 }
 
 /// User-provided configuration for the compiler.
@@ -275,6 +278,7 @@ impl Config {
             detect_host_feature: None,
             x86_float_abi_ok: None,
             shared_memory: false,
+            syscall_fuel_params: None,
         };
         ret.wasm_backtrace_details(WasmBacktraceDetails::Environment);
         ret
@@ -2890,6 +2894,18 @@ impl Config {
     /// > compiler.
     pub fn signals_based_traps(&mut self, enable: bool) -> &mut Self {
         self.tunables.signals_based_traps = Some(enable);
+        self
+    }
+
+    /// Set syscall fuel params
+    pub fn syscall_fuel_params(
+        &mut self,
+        syscall_fuel_params: HashMap<
+            rwasm_fuel_policy::SyscallName,
+            rwasm_fuel_policy::SyscallFuelParams,
+        >,
+    ) -> &mut Self {
+        self.syscall_fuel_params = Some(syscall_fuel_params);
         self
     }
 

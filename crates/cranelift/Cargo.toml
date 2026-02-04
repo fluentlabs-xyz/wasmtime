@@ -35,6 +35,9 @@ pulley-interpreter = { workspace = true, optional = true }
 wasmtime-math = { workspace = true }
 wasmtime-unwinder = { workspace = true, features = ["cranelift"] }
 
+# rwasm fuel policy
+rwasm-fuel-policy = { workspace = true }
+
 [features]
 all-arch = ["cranelift-codegen/all-arch"]
 host-arch = ["cranelift-codegen/host-arch"]
@@ -48,3 +51,4 @@ gc-drc = ["gc", "wasmtime-environ/gc-drc"]
 gc-null = ["gc", "wasmtime-environ/gc-null"]
 stack-switching = []
 threads = ["wasmtime-environ/threads"]
+disable-fpu = []

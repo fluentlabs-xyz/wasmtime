@@ -434,6 +434,9 @@ rayon = "1.5.3"
 regex = "1.9.1"
 pin-project-lite = "0.2.14"
 
+# rwasm specific
+rwasm-fuel-policy = { git = "https://github.com/fluentlabs-xyz/rwasm-fuel-policy.git", branch = "main", default-features = false }
+
 # =============================================================================
 #
 # Features for the Wasmtime CLI executable

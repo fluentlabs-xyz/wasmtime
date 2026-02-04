@@ -1,4 +1,3 @@
-use crate::Config;
 use crate::prelude::*;
 #[cfg(feature = "runtime")]
 pub use crate::runtime::code_memory::CustomCodeMemory;
@@ -6,6 +5,7 @@ pub use crate::runtime::code_memory::CustomCodeMemory;
 use crate::runtime::type_registry::TypeRegistry;
 #[cfg(feature = "runtime")]
 use crate::runtime::vm::GcRuntime;
+use crate::Config;
 use alloc::sync::Arc;
 use core::ptr::NonNull;
 #[cfg(target_has_atomic = "64")]
@@ -113,7 +113,7 @@ impl Engine {
         }
 
         #[cfg(any(feature = "cranelift", feature = "winch"))]
-        let (config, compiler) = if config.has_compiler() {
+        let (mut config, mut compiler) = if config.has_compiler() {
             let (config, compiler) = config.build_compiler(&mut tunables, features)?;
             (config, Some(compiler))
         } else {
@@ -121,6 +121,12 @@ impl Engine {
         };
         #[cfg(not(any(feature = "cranelift", feature = "winch")))]
         let _ = &mut tunables;
+
+        if let Some(syscall_fuel_params) = config.syscall_fuel_params.take() {
+            if let Some(compiler) = compiler.as_mut() {
+                compiler.set_syscall_fuel_params(syscall_fuel_params);
+            }
+        }
 
         Ok(Engine {
             inner: Arc::new(EngineInner {
