@@ -142,7 +142,7 @@ pub fn translate_operator(
     #[cfg(feature = "disable-fpu")]
     if rwasm_fuel_policy::is_rwasm_operator_disabled(op) {
         environ.trap(builder, crate::TRAP_DISABLED_OPCODE);
-        state.reachable = false;
+        environ.stacks.reachable = false;
         return Ok(());
     }
 
