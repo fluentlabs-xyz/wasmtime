@@ -61,6 +61,7 @@ smallvec = { workspace = true, optional = true }
 hashbrown = { workspace = true, features = ["default-hasher"] }
 bitflags = { workspace = true }
 futures = { workspace = true, features = ["alloc"], optional = true }
+rwasm-fuel-policy = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies.windows-sys]
 workspace = true
@@ -388,4 +389,4 @@ component-model-async = [
   "dep:futures"
 ]
 
-disable-fpu  = ["wasmtime-cranelift/disable-fpu"]
+rwasm  = ["wasmtime-cranelift/rwasm"]

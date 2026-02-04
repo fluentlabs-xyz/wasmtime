@@ -31,7 +31,7 @@ pub use crate::runtime::code_memory::CustomCodeMemory;
 pub use wasmtime_cache::{Cache, CacheConfig};
 #[cfg(all(feature = "incremental-cache", feature = "cranelift"))]
 pub use wasmtime_environ::CacheStore;
-pub use wasmtime_environ::{LinearFuelParams, QuadraticFuelParams, SyscallFuelParams, SyscallName};
+
 /// Represents the module instance allocation strategy to use.
 #[derive(Clone)]
 #[non_exhaustive]
@@ -164,7 +164,8 @@ pub struct Config {
     pub(crate) coredump_on_trap: bool,
     pub(crate) macos_use_mach_ports: bool,
     pub(crate) detect_host_feature: Option<fn(&str) -> Option<bool>>,
-    pub(crate) syscall_fuel_params: Option<HashMap<SyscallName, SyscallFuelParams>>,
+    pub(crate) syscall_fuel_params:
+        Option<HashMap<rwasm_fuel_policy::SyscallName, rwasm_fuel_policy::SyscallFuelParams>>,
 }
 
 /// User-provided configuration for the compiler.
@@ -2589,7 +2590,10 @@ impl Config {
     /// Set syscall fuel params
     pub fn syscall_fuel_params(
         &mut self,
-        syscall_fuel_params: HashMap<SyscallName, SyscallFuelParams>,
+        syscall_fuel_params: HashMap<
+            rwasm_fuel_policy::SyscallName,
+            rwasm_fuel_policy::SyscallFuelParams,
+        >,
     ) -> &mut Self {
         self.syscall_fuel_params = Some(syscall_fuel_params);
         self
