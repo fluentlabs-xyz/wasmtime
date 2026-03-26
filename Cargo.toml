@@ -177,7 +177,7 @@ members = [
   "examples/min-platform",
   "examples/min-platform/embedding",
   "examples/wasip2-plugins",
-  "fuzz",
+#  "fuzz",
   "winch/codegen",
 ]
 exclude = [

@@ -139,7 +139,7 @@ pub fn translate_operator(
         panic!("should always have operand types available for valid, reachable ops; op = {op:?}")
     });
 
-    #[cfg(feature = "disable-fpu")]
+    #[cfg(not(feature = "full-wasm-mode"))]
     if rwasm_fuel_policy::is_rwasm_operator_disabled(op) {
         environ.trap(builder, crate::TRAP_DISABLED_OPCODE);
         environ.stacks.reachable = false;
