@@ -1,5 +1,5 @@
 [package]
-name = "wasmtime-environ"
+name = "wasmtime-environ-rwasm"
 version.workspace = true
 authors.workspace = true
 description = "Standalone environment support for WebAssembly code in Cranelift"

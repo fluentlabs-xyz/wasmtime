@@ -1,5 +1,5 @@
 [package]
-name = "wasmtime-internal-cranelift"
+name = "wasmtime-internal-cranelift-rwasm"
 version.workspace = true
 authors.workspace = true
 description = "INTERNAL: Integration between Cranelift and Wasmtime"
