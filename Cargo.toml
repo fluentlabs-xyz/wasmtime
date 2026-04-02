@@ -435,7 +435,7 @@ regex = "1.9.1"
 pin-project-lite = "0.2.14"
 
 # rwasm specific
-rwasm-fuel-policy = { version = "0.0.1", default-features = false }
+rwasm-fuel-policy = { version = "0.0.2", default-features = false }
 
 # =============================================================================
 #
