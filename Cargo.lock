@@ -317,7 +317,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "wasmtime",
+ "wasmtime-rwasm",
  "wasmtime-wasi",
 ]
 
@@ -601,7 +601,7 @@ dependencies = [
  "tokio",
  "wasm-compose",
  "wasmparser 0.243.0",
- "wasmtime",
+ "wasmtime-rwasm",
  "wasmtime-wasi",
 ]
 
@@ -1156,7 +1156,7 @@ dependencies = [
  "anyhow",
  "dlmalloc",
  "raw-cpuid",
- "wasmtime",
+ "wasmtime-rwasm",
  "wasmtime-wasi-io",
 ]
 
@@ -2222,7 +2222,7 @@ dependencies = [
  "anyhow",
  "libloading",
  "object 0.37.3",
- "wasmtime",
+ "wasmtime-rwasm",
 ]
 
 [[package]]
@@ -3441,7 +3441,7 @@ dependencies = [
  "heck 0.5.0",
  "serde",
  "serde_derive",
- "wasmtime",
+ "wasmtime-rwasm",
  "wasmtime-test-util",
  "wat",
  "wit-component 0.243.0",
@@ -3941,7 +3941,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wasi-common",
- "wasmtime",
+ "wasmtime-rwasm",
  "wiggle",
  "windows-sys 0.61.2",
 ]
@@ -4163,72 +4163,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wasmtime"
-version = "41.0.2"
-dependencies = [
- "addr2line 0.25.1",
- "anyhow",
- "async-trait",
- "bitflags 2.9.4",
- "bumpalo",
- "bytes",
- "cc",
- "cfg-if",
- "cranelift-native",
- "encoding_rs",
- "env_logger 0.11.5",
- "futures",
- "fxprof-processed-profile",
- "gimli 0.32.3",
- "hashbrown",
- "indexmap",
- "ittapi",
- "libc",
- "libtest-mimic",
- "log",
- "mach2",
- "memfd",
- "object 0.37.3",
- "once_cell",
- "postcard",
- "proptest",
- "pulley-interpreter",
- "rand 0.9.2",
- "rayon",
- "rustix 1.0.8",
- "rwasm-fuel-policy",
- "semver",
- "serde",
- "serde_derive",
- "serde_json",
- "smallvec",
- "target-lexicon",
- "tempfile",
- "tokio",
- "wasm-compose",
- "wasm-encoder 0.243.0",
- "wasm-wave",
- "wasmparser 0.243.0",
- "wasmtime-environ",
- "wasmtime-internal-cache",
- "wasmtime-internal-component-macro",
- "wasmtime-internal-component-util",
- "wasmtime-internal-cranelift",
- "wasmtime-internal-fiber",
- "wasmtime-internal-jit-debug",
- "wasmtime-internal-jit-icache-coherence",
- "wasmtime-internal-math",
- "wasmtime-internal-slab",
- "wasmtime-internal-unwinder",
- "wasmtime-internal-versioned-export-macros",
- "wasmtime-internal-winch",
- "wasmtime-internal-wmemcheck",
- "wasmtime-test-util",
- "wat",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "wasmtime-bench-api"
 version = "41.0.2"
 dependencies = [
@@ -4237,8 +4171,8 @@ dependencies = [
  "clap",
  "shuffling-allocator",
  "target-lexicon",
- "wasmtime",
  "wasmtime-cli-flags",
+ "wasmtime-rwasm",
  "wasmtime-wasi",
  "wasmtime-wasi-nn",
  "wat",
@@ -4264,8 +4198,8 @@ dependencies = [
  "log",
  "tokio",
  "tracing",
- "wasmtime",
  "wasmtime-internal-c-api-macros",
+ "wasmtime-rwasm",
  "wasmtime-wasi",
  "wasmtime-wasi-io",
  "wat",
@@ -4322,7 +4256,6 @@ dependencies = [
  "wasi-common",
  "wasm-encoder 0.243.0",
  "wasmparser 0.243.0",
- "wasmtime",
  "wasmtime-cli-flags",
  "wasmtime-environ",
  "wasmtime-internal-cache",
@@ -4330,6 +4263,7 @@ dependencies = [
  "wasmtime-internal-cranelift",
  "wasmtime-internal-explorer",
  "wasmtime-internal-unwinder",
+ "wasmtime-rwasm",
  "wasmtime-test-macros",
  "wasmtime-test-util",
  "wasmtime-wasi",
@@ -4359,7 +4293,7 @@ dependencies = [
  "serde_derive",
  "toml",
  "tracing-subscriber",
- "wasmtime",
+ "wasmtime-rwasm",
 ]
 
 [[package]]
@@ -4450,9 +4384,9 @@ dependencies = [
  "similar",
  "syn 2.0.106",
  "tracing",
- "wasmtime",
  "wasmtime-internal-component-util",
  "wasmtime-internal-wit-bindgen",
+ "wasmtime-rwasm",
  "wit-parser 0.243.0",
 ]
 
@@ -4494,7 +4428,7 @@ dependencies = [
  "env_logger 0.11.5",
  "log",
  "tokio",
- "wasmtime",
+ "wasmtime-rwasm",
 ]
 
 [[package]]
@@ -4515,8 +4449,8 @@ dependencies = [
  "serde_json",
  "target-lexicon",
  "wasmprinter",
- "wasmtime",
  "wasmtime-environ",
+ "wasmtime-rwasm",
 ]
 
 [[package]]
@@ -4615,6 +4549,72 @@ name = "wasmtime-internal-wmemcheck"
 version = "41.0.2"
 
 [[package]]
+name = "wasmtime-rwasm"
+version = "41.0.2-rwasm.1"
+dependencies = [
+ "addr2line 0.25.1",
+ "anyhow",
+ "async-trait",
+ "bitflags 2.9.4",
+ "bumpalo",
+ "bytes",
+ "cc",
+ "cfg-if",
+ "cranelift-native",
+ "encoding_rs",
+ "env_logger 0.11.5",
+ "futures",
+ "fxprof-processed-profile",
+ "gimli 0.32.3",
+ "hashbrown",
+ "indexmap",
+ "ittapi",
+ "libc",
+ "libtest-mimic",
+ "log",
+ "mach2",
+ "memfd",
+ "object 0.37.3",
+ "once_cell",
+ "postcard",
+ "proptest",
+ "pulley-interpreter",
+ "rand 0.9.2",
+ "rayon",
+ "rustix 1.0.8",
+ "rwasm-fuel-policy",
+ "semver",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "smallvec",
+ "target-lexicon",
+ "tempfile",
+ "tokio",
+ "wasm-compose",
+ "wasm-encoder 0.243.0",
+ "wasm-wave",
+ "wasmparser 0.243.0",
+ "wasmtime-environ",
+ "wasmtime-internal-cache",
+ "wasmtime-internal-component-macro",
+ "wasmtime-internal-component-util",
+ "wasmtime-internal-cranelift",
+ "wasmtime-internal-fiber",
+ "wasmtime-internal-jit-debug",
+ "wasmtime-internal-jit-icache-coherence",
+ "wasmtime-internal-math",
+ "wasmtime-internal-slab",
+ "wasmtime-internal-unwinder",
+ "wasmtime-internal-versioned-export-macros",
+ "wasmtime-internal-winch",
+ "wasmtime-internal-wmemcheck",
+ "wasmtime-test-util",
+ "wat",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "wasmtime-test-macros"
 version = "0.0.0"
 dependencies = [
@@ -4643,9 +4643,9 @@ dependencies = [
  "toml",
  "wasmparser 0.243.0",
  "wasmprinter",
- "wasmtime",
  "wasmtime-environ",
  "wasmtime-internal-component-util",
+ "wasmtime-rwasm",
  "wat",
 ]
 
@@ -4677,7 +4677,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
- "wasmtime",
+ "wasmtime-rwasm",
  "wasmtime-test-util",
  "wasmtime-wasi-io",
  "wiggle",
@@ -4691,7 +4691,7 @@ dependencies = [
  "anyhow",
  "test-programs-artifacts",
  "tokio",
- "wasmtime",
+ "wasmtime-rwasm",
  "wasmtime-wasi",
 ]
 
@@ -4721,7 +4721,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wasm-compose",
- "wasmtime",
+ "wasmtime-rwasm",
  "wasmtime-wasi",
  "wasmtime-wasi-io",
  "webpki-roots",
@@ -4735,7 +4735,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures",
- "wasmtime",
+ "wasmtime-rwasm",
 ]
 
 [[package]]
@@ -4745,7 +4745,7 @@ dependencies = [
  "anyhow",
  "test-programs-artifacts",
  "tokio",
- "wasmtime",
+ "wasmtime-rwasm",
  "wasmtime-wasi",
 ]
 
@@ -4764,7 +4764,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "walkdir",
- "wasmtime",
+ "wasmtime-rwasm",
  "wasmtime-wasi",
  "wiggle",
  "windows",
@@ -4778,7 +4778,7 @@ dependencies = [
  "log",
  "rand 0.8.5",
  "wasi-common",
- "wasmtime",
+ "wasmtime-rwasm",
  "wasmtime-wasi",
 ]
 
@@ -4793,7 +4793,7 @@ dependencies = [
  "test-programs-artifacts",
  "tokio",
  "tokio-rustls",
- "wasmtime",
+ "wasmtime-rwasm",
  "wasmtime-wasi",
  "webpki-roots",
 ]
@@ -4808,7 +4808,7 @@ dependencies = [
  "test-programs-artifacts",
  "tokio",
  "tokio-native-tls",
- "wasmtime",
+ "wasmtime-rwasm",
  "wasmtime-wasi",
  "wasmtime-wasi-tls",
 ]
@@ -4824,7 +4824,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "wasmparser 0.243.0",
- "wasmtime",
+ "wasmtime-rwasm",
  "wast 243.0.0",
 ]
 
@@ -4842,7 +4842,7 @@ dependencies = [
  "wasm-encoder 0.243.0",
  "wasmparser 0.243.0",
  "wasmprinter",
- "wasmtime",
+ "wasmtime-rwasm",
  "wasmtime-wasi",
  "wat",
 ]
@@ -4908,7 +4908,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tracing",
- "wasmtime",
+ "wasmtime-rwasm",
  "wiggle-macro",
  "wiggle-test",
  "witx",
@@ -5386,7 +5386,7 @@ dependencies = [
  "log",
  "wasm-smith",
  "wasmprinter",
- "wasmtime",
+ "wasmtime-rwasm",
  "wasmtime-wizer",
 ]
 
