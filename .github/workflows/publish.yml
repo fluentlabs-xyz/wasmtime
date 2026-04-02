@@ -40,10 +40,16 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Verify crate version matches tag
+        shell: bash
         run: |
           tag="${{ steps.extract_version.outputs.version }}"
           tag="${tag#v}"
-          cargo_ver=$(grep -m1 '^version' Cargo.toml | awk -F'=' '{print $2}' | tr -d ' "')
+          
+          cargo_ver=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "wasmtime-cli") | .version')
+          
+          echo "tag=$tag"
+          echo "cargo_ver=$cargo_ver"
+          
           [[ "$tag" == "$cargo_ver"* ]] || {
             echo "Tag $tag doesn't match the Cargo version $cargo_ver"
             exit 1
