@@ -55,6 +55,12 @@ jobs:
             exit 1
           }
 
+      - name: Verify package
+        run: |
+          cargo publish --dry-run -p wasmtime-environ-rwasm
+          cargo publish --dry-run -p wasmtime-internal-cranelift-rwasm
+          cargo publish --dry-run -p wasmtime-rwasm
+
       - name: Publish to crates.io
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
         env:

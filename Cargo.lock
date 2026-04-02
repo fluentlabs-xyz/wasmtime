@@ -270,7 +270,7 @@ dependencies = [
 
 [[package]]
 name = "byte-array-literals"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 
 [[package]]
 name = "byteorder"
@@ -1151,7 +1151,7 @@ checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 
 [[package]]
 name = "embedding"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "dlmalloc",
@@ -2217,7 +2217,7 @@ dependencies = [
 
 [[package]]
 name = "min-platform-host"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "libloading",
@@ -2589,7 +2589,7 @@ dependencies = [
 
 [[package]]
 name = "pulley-interpreter"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "arbitrary",
@@ -2604,7 +2604,7 @@ dependencies = [
 
 [[package]]
 name = "pulley-macros"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3858,7 +3858,7 @@ version = "0.1.0"
 
 [[package]]
 name = "verify-component-adapter"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "wasmparser 0.243.0",
@@ -3917,7 +3917,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-common"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3957,7 +3957,7 @@ dependencies = [
 
 [[package]]
 name = "wasi-preview1-component-adapter"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "bitflags 2.9.4",
  "byte-array-literals",
@@ -4164,7 +4164,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-bench-api"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "cap-std",
@@ -4180,14 +4180,14 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-c-api"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "wasmtime-c-api-impl",
 ]
 
 [[package]]
 name = "wasmtime-c-api-impl"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4207,7 +4207,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-cli"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4283,7 +4283,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-cli-flags"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -4343,7 +4343,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-c-api-macros"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4351,7 +4351,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-cache"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "base64",
  "directories-next",
@@ -4372,7 +4372,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-component-macro"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "component-macro-test-helpers",
@@ -4392,7 +4392,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-component-util"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 
 [[package]]
 name = "wasmtime-internal-cranelift-rwasm"
@@ -4422,7 +4422,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-debugger"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "env_logger 0.11.5",
@@ -4433,14 +4433,14 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-error"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
 ]
 
 [[package]]
 name = "wasmtime-internal-explorer"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "capstone",
@@ -4455,7 +4455,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-fiber"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "backtrace",
  "cc",
@@ -4469,7 +4469,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-jit-debug"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "cc",
  "object 0.37.3",
@@ -4479,7 +4479,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-jit-icache-coherence"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -4489,18 +4489,18 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-math"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "libm",
 ]
 
 [[package]]
 name = "wasmtime-internal-slab"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 
 [[package]]
 name = "wasmtime-internal-unwinder"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "cfg-if",
  "cranelift-codegen",
@@ -4511,7 +4511,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-versioned-export-macros"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4520,7 +4520,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-winch"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "cranelift-codegen",
  "gimli 0.32.3",
@@ -4535,7 +4535,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-wit-bindgen"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "bitflags 2.9.4",
@@ -4546,7 +4546,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-wmemcheck"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 
 [[package]]
 name = "wasmtime-rwasm"
@@ -4627,7 +4627,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-test-util"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "arbitrary",
@@ -4651,7 +4651,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-wasi"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4686,7 +4686,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-wasi-config"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "test-programs-artifacts",
@@ -4697,7 +4697,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-wasi-http"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4729,7 +4729,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-wasi-io"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4740,7 +4740,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-wasi-keyvalue"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "test-programs-artifacts",
@@ -4751,7 +4751,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-wasi-nn"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "cap-std",
@@ -4772,7 +4772,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-wasi-threads"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "log",
@@ -4784,7 +4784,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-wasi-tls"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4800,7 +4800,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-wasi-tls-nativetls"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "futures",
@@ -4815,7 +4815,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-wast"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "json-from-wast",
@@ -4830,7 +4830,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-wizer"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -4900,7 +4900,7 @@ dependencies = [
 
 [[package]]
 name = "wiggle"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "bitflags 2.9.4",
@@ -4916,7 +4916,7 @@ dependencies = [
 
 [[package]]
 name = "wiggle-generate"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "heck 0.5.0",
@@ -4928,7 +4928,7 @@ dependencies = [
 
 [[package]]
 name = "wiggle-macro"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4983,7 +4983,7 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "winch-codegen"
-version = "41.0.2-rwasm.1"
+version = "41.0.2"
 dependencies = [
  "anyhow",
  "cranelift-assembler-x64",
