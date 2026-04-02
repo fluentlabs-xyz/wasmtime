@@ -239,9 +239,9 @@ extra_unused_type_parameters = 'warn'
 # tooling but aren't intended to be widely depended on.
 #
 # All of these crates are supported though in the sense that
-wasmtime = { path = "crates/wasmtime", package = "wasmtime-rwasm", version = "41.0.2-rwasm.1", default-features = false }
+wasmtime = { path = "crates/wasmtime", package = "wasmtime-rwasm", version = "41.0.2", default-features = false }
 wasmtime-cli-flags = { path = "crates/cli-flags", version = "=41.0.2" }
-wasmtime-environ = { path = "crates/environ", package = "wasmtime-environ-rwasm", version = "=41.0.2-rwasm.1" }
+wasmtime-environ = { path = "crates/environ", package = "wasmtime-environ-rwasm", version = "=41.0.2" }
 wasmtime-wasi = { path = "crates/wasi", version = "41.0.2", default-features = false }
 wasmtime-wasi-io = { path = "crates/wasi-io", version = "41.0.2", default-features = false }
 wasmtime-wasi-http = { path = "crates/wasi-http", version = "41.0.2", default-features = false }
@@ -264,7 +264,7 @@ wasmtime-error = { path = "crates/error", version = "=41.0.2", package = 'wasmti
 wasmtime-wmemcheck = { path = "crates/wmemcheck", version = "=41.0.2", package = 'wasmtime-internal-wmemcheck' }
 wasmtime-c-api-macros = { path = "crates/c-api-macros", version = "=41.0.2", package = 'wasmtime-internal-c-api-macros' }
 wasmtime-cache = { path = "crates/cache", version = "=41.0.2", package = 'wasmtime-internal-cache' }
-wasmtime-cranelift = { path = "crates/cranelift", version = "=41.0.2-rwasm.1", package = 'wasmtime-internal-cranelift-rwasm' }
+wasmtime-cranelift = { path = "crates/cranelift", version = "=41.0.2", package = 'wasmtime-internal-cranelift-rwasm' }
 wasmtime-winch = { path = "crates/winch", version = "=41.0.2", package = 'wasmtime-internal-winch'  }
 wasmtime-explorer = { path = "crates/explorer", version = "=41.0.2", package = 'wasmtime-internal-explorer'  }
 wasmtime-fiber = { path = "crates/fiber", version = "=41.0.2", package = 'wasmtime-internal-fiber' }

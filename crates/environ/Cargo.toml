@@ -1,6 +1,6 @@
 [package]
 name = "wasmtime-environ-rwasm"
-version = "41.0.2-rwasm.1"
+version.workspace = true
 authors.workspace = true
 description = "Standalone environment support for WebAssembly code in Cranelift"
 license = "Apache-2.0 WITH LLVM-exception"
