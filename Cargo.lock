@@ -4257,7 +4257,7 @@ dependencies = [
  "wasm-encoder 0.243.0",
  "wasmparser 0.243.0",
  "wasmtime-cli-flags",
- "wasmtime-environ",
+ "wasmtime-environ-rwasm",
  "wasmtime-internal-cache",
  "wasmtime-internal-component-util",
  "wasmtime-internal-cranelift-rwasm",
@@ -4297,8 +4297,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "wasmtime-environ"
-version = "41.0.2"
+name = "wasmtime-environ-fuzz"
+version = "0.0.0"
+dependencies = [
+ "arbitrary",
+ "env_logger 0.11.5",
+ "libfuzzer-sys",
+ "wasmparser 0.243.0",
+ "wasmprinter",
+ "wasmtime-environ-rwasm",
+ "wasmtime-test-util",
+ "wat",
+]
+
+[[package]]
+name = "wasmtime-environ-rwasm"
+version = "41.0.2-rwasm.1"
 dependencies = [
  "anyhow",
  "arbitrary",
@@ -4328,20 +4342,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wasmtime-environ-fuzz"
-version = "0.0.0"
-dependencies = [
- "arbitrary",
- "env_logger 0.11.5",
- "libfuzzer-sys",
- "wasmparser 0.243.0",
- "wasmprinter",
- "wasmtime-environ",
- "wasmtime-test-util",
- "wat",
-]
-
-[[package]]
 name = "wasmtime-internal-c-api-macros"
 version = "41.0.2"
 dependencies = [
@@ -4365,7 +4365,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "toml",
- "wasmtime-environ",
+ "wasmtime-environ-rwasm",
  "windows-sys 0.61.2",
  "zstd 0.13.0",
 ]
@@ -4414,7 +4414,7 @@ dependencies = [
  "target-lexicon",
  "thiserror 2.0.17",
  "wasmparser 0.243.0",
- "wasmtime-environ",
+ "wasmtime-environ-rwasm",
  "wasmtime-internal-math",
  "wasmtime-internal-unwinder",
  "wasmtime-internal-versioned-export-macros",
@@ -4449,7 +4449,7 @@ dependencies = [
  "serde_json",
  "target-lexicon",
  "wasmprinter",
- "wasmtime-environ",
+ "wasmtime-environ-rwasm",
  "wasmtime-rwasm",
 ]
 
@@ -4462,7 +4462,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "rustix 1.0.8",
- "wasmtime-environ",
+ "wasmtime-environ-rwasm",
  "wasmtime-internal-versioned-export-macros",
  "windows-sys 0.61.2",
 ]
@@ -4506,7 +4506,7 @@ dependencies = [
  "cranelift-codegen",
  "log",
  "object 0.37.3",
- "wasmtime-environ",
+ "wasmtime-environ-rwasm",
 ]
 
 [[package]]
@@ -4528,7 +4528,7 @@ dependencies = [
  "object 0.37.3",
  "target-lexicon",
  "wasmparser 0.243.0",
- "wasmtime-environ",
+ "wasmtime-environ-rwasm",
  "wasmtime-internal-cranelift-rwasm",
  "winch-codegen",
 ]
@@ -4595,7 +4595,7 @@ dependencies = [
  "wasm-encoder 0.243.0",
  "wasm-wave",
  "wasmparser 0.243.0",
- "wasmtime-environ",
+ "wasmtime-environ-rwasm",
  "wasmtime-internal-cache",
  "wasmtime-internal-component-macro",
  "wasmtime-internal-component-util",
@@ -4643,7 +4643,7 @@ dependencies = [
  "toml",
  "wasmparser 0.243.0",
  "wasmprinter",
- "wasmtime-environ",
+ "wasmtime-environ-rwasm",
  "wasmtime-internal-component-util",
  "wasmtime-rwasm",
  "wat",
@@ -4994,7 +4994,7 @@ dependencies = [
  "target-lexicon",
  "thiserror 2.0.17",
  "wasmparser 0.243.0",
- "wasmtime-environ",
+ "wasmtime-environ-rwasm",
  "wasmtime-internal-cranelift-rwasm",
  "wasmtime-internal-math",
 ]

@@ -113,7 +113,7 @@ impl Engine {
         }
 
         #[cfg(any(feature = "cranelift", feature = "winch"))]
-        let (mut config, compiler) = if config.has_compiler() {
+        let (mut config, mut compiler) = if config.has_compiler() {
             let (config, compiler) = config.build_compiler(&mut tunables, features)?;
             (config, Some(compiler))
         } else {
@@ -122,10 +122,10 @@ impl Engine {
         #[cfg(not(any(feature = "cranelift", feature = "winch")))]
         let _ = &mut tunables;
 
-        if config.syscall_fuel_params.take().is_some() {
-            // Intentionally ignored in the crates.io-published `wasmtime-rwasm`
-            // package to remain compatible with upstream
-            // `wasmtime-internal-cranelift` API surface.
+        if let Some(syscall_fuel_params) = config.syscall_fuel_params.take() {
+            if let Some(compiler) = compiler.as_mut() {
+                compiler.set_syscall_fuel_params(syscall_fuel_params);
+            }
         }
 
         Ok(Engine {

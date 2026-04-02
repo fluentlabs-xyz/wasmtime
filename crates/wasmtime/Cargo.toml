@@ -427,6 +427,4 @@ debug = [
 # Enables support for defining compile-time builtins.
 compile-time-builtins = ['dep:wasm-compose', 'dep:tempfile']
 
-# Keep as a marker feature on the published rwasm crate; this avoids forcing
-# crates.io to resolve a fork-only internal `wasmtime-internal-cranelift` feature.
-full-wasm-mode = []
+full-wasm-mode  = ["wasmtime-cranelift/full-wasm-mode"]

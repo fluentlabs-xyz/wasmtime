@@ -241,7 +241,7 @@ extra_unused_type_parameters = 'warn'
 # All of these crates are supported though in the sense that
 wasmtime = { path = "crates/wasmtime", package = "wasmtime-rwasm", version = "41.0.2-rwasm.1", default-features = false }
 wasmtime-cli-flags = { path = "crates/cli-flags", version = "=41.0.2" }
-wasmtime-environ = { path = "crates/environ", version = "=41.0.2" }
+wasmtime-environ = { path = "crates/environ", package = "wasmtime-environ-rwasm", version = "=41.0.2-rwasm.1" }
 wasmtime-wasi = { path = "crates/wasi", version = "41.0.2", default-features = false }
 wasmtime-wasi-io = { path = "crates/wasi-io", version = "41.0.2", default-features = false }
 wasmtime-wasi-http = { path = "crates/wasi-http", version = "41.0.2", default-features = false }
