@@ -185,7 +185,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "41.0.2"
+version = "41.0.2-rwasm.1"
 authors = ["The Wasmtime Project Developers"]
 edition = "2024"
 # Wasmtime's current policy is that this number can be no larger than the
@@ -435,7 +435,7 @@ regex = "1.9.1"
 pin-project-lite = "0.2.14"
 
 # rwasm specific
-rwasm-fuel-policy = { git = "https://github.com/fluentlabs-xyz/rwasm-fuel-policy.git", branch = "main", default-features = false }
+rwasm-fuel-policy = { version = "0.0.1", default-features = false }
 
 # =============================================================================
 #

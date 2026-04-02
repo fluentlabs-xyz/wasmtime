@@ -2987,8 +2987,9 @@ dependencies = [
 
 [[package]]
 name = "rwasm-fuel-policy"
-version = "0.1.0"
-source = "git+https://github.com/fluentlabs-xyz/rwasm-fuel-policy.git?branch=main#7a671fd90530f1016252a7326bf6a6bcbaa758ec"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69621ecb28a59e7e382c1f95222618cdb25caa2efddc5803d0b167f0cfcdf860"
 dependencies = [
  "wasmparser 0.243.0",
 ]
