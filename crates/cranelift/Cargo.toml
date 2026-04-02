@@ -1,6 +1,6 @@
 [package]
-name = "wasmtime-internal-cranelift"
-version.workspace = true
+name = "wasmtime-internal-cranelift-rwasm"
+version = "41.0.2-rwasm.1"
 authors.workspace = true
 description = "INTERNAL: Integration between Cranelift and Wasmtime"
 license = "Apache-2.0 WITH LLVM-exception"

@@ -264,7 +264,7 @@ wasmtime-error = { path = "crates/error", version = "=41.0.2", package = 'wasmti
 wasmtime-wmemcheck = { path = "crates/wmemcheck", version = "=41.0.2", package = 'wasmtime-internal-wmemcheck' }
 wasmtime-c-api-macros = { path = "crates/c-api-macros", version = "=41.0.2", package = 'wasmtime-internal-c-api-macros' }
 wasmtime-cache = { path = "crates/cache", version = "=41.0.2", package = 'wasmtime-internal-cache' }
-wasmtime-cranelift = { path = "crates/cranelift", version = "=41.0.2", package = 'wasmtime-internal-cranelift' }
+wasmtime-cranelift = { path = "crates/cranelift", version = "=41.0.2-rwasm.1", package = 'wasmtime-internal-cranelift-rwasm' }
 wasmtime-winch = { path = "crates/winch", version = "=41.0.2", package = 'wasmtime-internal-winch'  }
 wasmtime-explorer = { path = "crates/explorer", version = "=41.0.2", package = 'wasmtime-internal-explorer'  }
 wasmtime-fiber = { path = "crates/fiber", version = "=41.0.2", package = 'wasmtime-internal-fiber' }

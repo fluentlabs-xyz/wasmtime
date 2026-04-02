@@ -229,16 +229,6 @@ impl wasmtime_environ::Compiler for Compiler {
         Some(self)
     }
 
-    fn set_syscall_fuel_params(
-        &mut self,
-        syscall_fuel_params: HashMap<
-            rwasm_fuel_policy::SyscallName,
-            rwasm_fuel_policy::SyscallFuelParams,
-        >,
-    ) {
-        self.syscall_fuel_params = syscall_fuel_params
-    }
-
     fn compile_function(
         &self,
         translation: &ModuleTranslation<'_>,
