@@ -143,11 +143,6 @@ pub fn translate_operator(
     if rwasm_fuel_policy::is_rwasm_operator_disabled(op) {
         environ.trap(builder, crate::TRAP_DISABLED_OPCODE);
         environ.stacks.reachable = false;
-        // Emit fuel increment and store if we have remaining fuel accumulated
-        if environ.fuel_consumed > 0 {
-            environ.fuel_increment_var(builder);
-            environ.fuel_save_from_var(builder);
-        }
         return Ok(());
     }
 

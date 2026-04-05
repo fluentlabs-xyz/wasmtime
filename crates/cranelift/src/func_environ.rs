@@ -192,7 +192,7 @@ pub struct FuncEnvironment<'module_environment> {
     /// spill, and this isn't any worse than reloading each time.
     epoch_ptr_var: cranelift_frontend::Variable,
 
-    pub fuel_consumed: i64,
+    fuel_consumed: i64,
 
     /// A `GlobalValue` in CLIF which represents the stack limit.
     ///
@@ -437,6 +437,13 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
         self.fuel_consumed += rwasm_fuel_policy::rwasm_fuel_for_operator(op) as i64;
 
         match op {
+            // Before each disabled opcode we must make sure that all opcodes are emitted
+            #[cfg(not(feature = "full-wasm-mode"))]
+            op if rwasm_fuel_policy::is_rwasm_operator_disabled(op) && self.fuel_consumed > 0 => {
+                self.fuel_increment_var(builder);
+                self.fuel_save_from_var(builder);
+            }
+
             // Exiting a function (via a return or unreachable) or otherwise
             // entering a different function (via a call) means that we need to
             // update the fuel consumption in `VMStoreContext` because we're
