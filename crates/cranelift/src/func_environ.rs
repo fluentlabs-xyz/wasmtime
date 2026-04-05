@@ -192,7 +192,7 @@ pub struct FuncEnvironment<'module_environment> {
     /// spill, and this isn't any worse than reloading each time.
     epoch_ptr_var: cranelift_frontend::Variable,
 
-    fuel_consumed: i64,
+    pub fuel_consumed: i64,
 
     /// A `GlobalValue` in CLIF which represents the stack limit.
     ///
@@ -656,7 +656,7 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
 
     /// Adds `self.fuel_consumed` to the `fuel_var`, zero-ing out the amount of
     /// fuel consumed at that point.
-    fn fuel_increment_var(&mut self, builder: &mut FunctionBuilder<'_>) {
+    pub fn fuel_increment_var(&mut self, builder: &mut FunctionBuilder<'_>) {
         let consumption = mem::replace(&mut self.fuel_consumed, 0);
         if consumption == 0 {
             return;
@@ -678,7 +678,7 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
 
     /// Stores the fuel consumption value from `self.fuel_var` into
     /// `VMStoreContext`.
-    fn fuel_save_from_var(&mut self, builder: &mut FunctionBuilder<'_>) {
+    pub fn fuel_save_from_var(&mut self, builder: &mut FunctionBuilder<'_>) {
         let (addr, offset) = self.fuel_addr_offset(builder);
         let fuel_consumed = builder.use_var(self.fuel_var);
         builder
