@@ -1,6 +1,6 @@
 [package]
-name = "wasmtime-internal-cranelift"
-version.workspace = true
+name = "wasmtime-internal-cranelift-rwasm"
+version = "45.0.0-rwasm.1"
 authors.workspace = true
 description = "INTERNAL: Integration between Cranelift and Wasmtime"
 license = "Apache-2.0 WITH LLVM-exception"
@@ -35,6 +35,9 @@ pulley-interpreter = { workspace = true, optional = true }
 wasmtime-core = { workspace = true }
 wasmtime-unwinder = { workspace = true, features = ["cranelift"] }
 
+# rwasm fuel policy
+rwasm-fuel-policy = { workspace = true }
+
 [features]
 all-arch = ["cranelift-codegen/all-arch"]
 host-arch = ["cranelift-codegen/host-arch"]
@@ -49,3 +52,4 @@ gc-null = ["gc", "wasmtime-environ/gc-null"]
 gc-copying = ["gc", "wasmtime-environ/gc-copying"]
 stack-switching = []
 threads = ["wasmtime-environ/threads"]
+full-wasm-mode = []

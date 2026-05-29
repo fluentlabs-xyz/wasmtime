@@ -4,6 +4,7 @@ use bitflags::Flags;
 use core::fmt;
 use core::num::{NonZeroU32, NonZeroUsize};
 use core::str::FromStr;
+use std::collections::HashMap;
 #[cfg(any(feature = "cranelift", feature = "winch"))]
 use std::path::Path;
 pub use wasmparser::WasmFeatures;
@@ -200,6 +201,8 @@ pub struct Config {
     pub(crate) x86_float_abi_ok: Option<bool>,
     pub(crate) shared_memory: bool,
     pub(crate) rr_config: RRConfig,
+    pub(crate) syscall_fuel_params:
+        Option<HashMap<rwasm_fuel_policy::SyscallName, rwasm_fuel_policy::SyscallFuelParams>>,
 }
 
 /// User-provided configuration for the compiler.
@@ -310,6 +313,7 @@ impl Config {
             x86_float_abi_ok: None,
             shared_memory: false,
             rr_config: RRConfig::None,
+            syscall_fuel_params: None,
         };
         ret.wasm_backtrace_details(WasmBacktraceDetails::Environment);
         ret
@@ -619,6 +623,18 @@ impl Config {
     /// This is only relevant when [`Config::consume_fuel`] is enabled.
     pub fn operator_cost(&mut self, cost: OperatorCost) -> &mut Self {
         self.tunables.operator_cost = Some(OperatorCostStrategy::table(cost));
+        self
+    }
+
+    /// Set syscall fuel params.
+    pub fn syscall_fuel_params(
+        &mut self,
+        syscall_fuel_params: HashMap<
+            rwasm_fuel_policy::SyscallName,
+            rwasm_fuel_policy::SyscallFuelParams,
+        >,
+    ) -> &mut Self {
+        self.syscall_fuel_params = Some(syscall_fuel_params);
         self
     }
 

@@ -1,6 +1,6 @@
 [package]
-name = "wasmtime"
-version.workspace = true
+name = "wasmtime-rwasm"
+version = "45.0.0-rwasm.1"
 authors.workspace = true
 description = "High-level API to expose the Wasmtime runtime"
 documentation = "https://docs.rs/wasmtime"
@@ -59,6 +59,7 @@ smallvec = { workspace = true, optional = true }
 bitflags = { workspace = true }
 futures = { workspace = true, features = ["alloc"], optional = true }
 bytes = { workspace = true, optional = true }
+rwasm-fuel-policy = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies.windows-sys]
 workspace = true
@@ -444,6 +445,7 @@ debug = [
 
 # Enables support for defining compile-time builtins.
 compile-time-builtins = ['anyhow', 'dep:wasm-compose', 'dep:tempfile']
+full-wasm-mode = ["wasmtime-cranelift/full-wasm-mode"]
 
 # Enable support for the common base infrastructure of record/replay
 rr = [

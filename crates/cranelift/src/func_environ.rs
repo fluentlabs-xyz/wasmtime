@@ -3,6 +3,7 @@ pub(crate) mod stack_switching;
 
 use crate::BuiltinFunctionSignatures;
 use crate::compiler::Compiler;
+use crate::rwasm_fuel;
 use crate::translate::{
     FuncTranslationStacks, GlobalVariable, Heap, HeapData, MemoryKind, StructFieldsVec, TableData,
     TableSize, TargetEnvironment,
@@ -394,13 +395,8 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
         self.fuel_save_from_var(builder);
     }
 
-    fn fuel_before_op(
-        &mut self,
-        op: &Operator<'_>,
-        builder: &mut FunctionBuilder<'_>,
-        reachable: bool,
-    ) {
-        if !reachable {
+    fn fuel_before_op(&mut self, op: &Operator<'_>, builder: &mut FunctionBuilder<'_>) {
+        if !self.is_reachable() {
             // In unreachable code we shouldn't have any leftover fuel we
             // haven't accounted for since the reason for us to become
             // unreachable should have already added it to `self.fuel_var`.
@@ -408,9 +404,16 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
             return;
         }
 
-        self.fuel_consumed += self.tunables.operator_cost.cost(op);
+        self.fuel_consumed += rwasm_fuel::rwasm_fuel_for_operator(op) as i64;
 
         match op {
+            // Before each disabled opcode we must make sure that all opcodes are emitted.
+            #[cfg(not(feature = "full-wasm-mode"))]
+            op if rwasm_fuel::is_rwasm_operator_disabled(op) && self.fuel_consumed > 0 => {
+                self.fuel_increment_var(builder);
+                self.fuel_save_from_var(builder);
+            }
+
             // Exiting a function (via a return or unreachable) or otherwise
             // entering a different function (via a call) means that we need to
             // update the fuel consumption in `VMStoreContext` because we're
@@ -483,6 +486,131 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
             // do so upon entering a block.
             _ => {}
         }
+
+        self.rwasm_eval_fuel_policy(op, builder);
+    }
+
+    fn rwasm_eval_fuel_policy(&mut self, op: &Operator<'_>, builder: &mut FunctionBuilder<'_>) {
+        use rwasm_fuel_policy::*;
+        use wasmtime_environ::EntityType;
+
+        let policy = match op {
+            Operator::Call { function_index } | Operator::ReturnCall { function_index } => {
+                if let Some(fuel_param) = self
+                    .module
+                    .imports()
+                    .filter(|(_, _, import)| matches!(import, EntityType::Function(_)))
+                    .nth(*function_index as usize)
+                    .and_then(|(module_name, import_name, _)| {
+                        self.compiler.syscall_fuel_params.get(&SyscallName {
+                            module: module_name.to_string(),
+                            name: import_name.to_string(),
+                        })
+                    })
+                {
+                    fuel_param
+                } else {
+                    return;
+                }
+            }
+            _ => return,
+        };
+
+        match policy {
+            SyscallFuelParams::Const(base) => {
+                self.fuel_consumed += *base as i64;
+                self.fuel_increment_var(builder);
+                self.fuel_save_from_var(builder);
+            }
+            SyscallFuelParams::LinearFuel(LinearFuelParams {
+                base_fuel,
+                param_index,
+                word_cost,
+            }) => {
+                self.fuel_consumed += *base_fuel as i64;
+                self.fuel_increment_var(builder);
+
+                let linear_param = self.stacks.peekn(*param_index as usize)[0];
+                let cmp = builder.ins().icmp_imm(
+                    IntCC::UnsignedGreaterThan,
+                    linear_param,
+                    Imm64::new(FUEL_MAX_LINEAR_X as i64),
+                );
+                let block_ok = builder.create_block();
+                let block_trap = builder.create_block();
+                builder.ins().brif(cmp, block_trap, &[], block_ok, &[]);
+                builder.seal_block(block_trap);
+                builder.switch_to_block(block_trap);
+                builder.ins().trap(ir::TrapCode::INTEGER_OVERFLOW);
+
+                builder.seal_block(block_ok);
+                builder.switch_to_block(block_ok);
+
+                let new_value = builder.ins().iadd_imm(linear_param, Imm64::new(31));
+                let new_value = builder.ins().udiv_imm(new_value, Imm64::new(32));
+                let new_value = builder
+                    .ins()
+                    .imul_imm(new_value, Imm64::new(*word_cost as i64));
+                let fuel = builder.use_var(self.fuel_var);
+                let fuel = builder.ins().iadd(fuel, new_value);
+                builder.def_var(self.fuel_var, fuel);
+                self.fuel_save_from_var(builder);
+            }
+            SyscallFuelParams::QuadraticFuel(QuadraticFuelParams {
+                local_depth,
+                word_cost,
+                divisor,
+                fuel_denom_rate,
+            }) => {
+                let local_depth = self.stacks.peekn(*local_depth as usize)[0];
+                let cmp = builder.ins().icmp_imm(
+                    IntCC::UnsignedGreaterThan,
+                    local_depth,
+                    Imm64::new(FUEL_MAX_QUADRATIC_X as i64),
+                );
+                let block_ok = builder.create_block();
+                let block_trap = builder.create_block();
+                builder.ins().brif(cmp, block_trap, &[], block_ok, &[]);
+                builder.seal_block(block_trap);
+                builder.switch_to_block(block_trap);
+                builder.ins().trap(ir::TrapCode::INTEGER_OVERFLOW);
+
+                builder.seal_block(block_ok);
+                builder.switch_to_block(block_ok);
+
+                let compute_words = |builder: &mut FunctionBuilder, value: ir::Value| {
+                    let t = builder.ins().iadd_imm(value, Imm64::new(31));
+                    builder.ins().udiv_imm(t, Imm64::new(32))
+                };
+
+                let linear_words = compute_words(builder, local_depth);
+
+                let linear_part = builder
+                    .ins()
+                    .imul_imm(linear_words, Imm64::new(*word_cost as i64));
+
+                let w1 = compute_words(builder, local_depth);
+                let w2 = compute_words(builder, local_depth);
+
+                let quadratic_mul = builder.ins().imul(w1, w2);
+
+                let quadratic_div = builder
+                    .ins()
+                    .udiv_imm(quadratic_mul, Imm64::new(*divisor as i64));
+
+                let sum = builder.ins().iadd(linear_part, quadratic_div);
+
+                let fuel_after_rate = builder
+                    .ins()
+                    .imul_imm(sum, Imm64::new(*fuel_denom_rate as i64));
+
+                let fuel = builder.use_var(self.fuel_var);
+                let fuel = builder.ins().iadd(fuel, fuel_after_rate);
+                builder.def_var(self.fuel_var, fuel);
+                self.fuel_save_from_var(builder)
+            }
+            _ => {}
+        }
     }
 
     fn fuel_after_op(&mut self, op: &Operator<'_>, builder: &mut FunctionBuilder<'_>) {
@@ -498,7 +626,7 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
 
     /// Adds `self.fuel_consumed` to the `fuel_var`, zero-ing out the amount of
     /// fuel consumed at that point.
-    fn fuel_increment_var(&mut self, builder: &mut FunctionBuilder<'_>) {
+    pub fn fuel_increment_var(&mut self, builder: &mut FunctionBuilder<'_>) {
         let consumption = mem::replace(&mut self.fuel_consumed, 0);
         if consumption == 0 {
             return;
@@ -520,7 +648,7 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
 
     /// Stores the fuel consumption value from `self.fuel_var` into
     /// `VMStoreContext`.
-    fn fuel_save_from_var(&mut self, builder: &mut FunctionBuilder<'_>) {
+    pub fn fuel_save_from_var(&mut self, builder: &mut FunctionBuilder<'_>) {
         let (addr, offset) = self.fuel_addr_offset(builder);
         let fuel_consumed = builder.use_var(self.fuel_var);
         builder
@@ -3628,7 +3756,7 @@ impl FuncEnvironment<'_> {
         builder: &mut FunctionBuilder,
     ) -> WasmResult<()> {
         if self.tunables.consume_fuel {
-            self.fuel_before_op(op, builder, self.is_reachable());
+            self.fuel_before_op(op, builder);
         }
         if self.is_reachable() && self.state_slot.is_some() {
             let builtin = self.builtin_functions.patchable_breakpoint(builder.func);

@@ -87,6 +87,8 @@ pub struct Compiler {
     clif_dir: Option<path::PathBuf>,
     #[cfg(feature = "wmemcheck")]
     pub(crate) wmemcheck: bool,
+    pub(crate) syscall_fuel_params:
+        HashMap<rwasm_fuel_policy::SyscallName, rwasm_fuel_policy::SyscallFuelParams>,
 }
 
 impl Drop for Compiler {
@@ -138,6 +140,7 @@ impl Compiler {
             clif_dir,
             #[cfg(feature = "wmemcheck")]
             wmemcheck,
+            syscall_fuel_params: Default::default(),
         }
     }
 
@@ -225,6 +228,16 @@ fn box_dyn_any(x: impl Any + Send + Sync) -> Box<dyn Any + Send + Sync> {
 impl wasmtime_environ::Compiler for Compiler {
     fn inlining_compiler(&self) -> Option<&dyn wasmtime_environ::InliningCompiler> {
         Some(self)
+    }
+
+    fn set_syscall_fuel_params(
+        &mut self,
+        syscall_fuel_params: HashMap<
+            rwasm_fuel_policy::SyscallName,
+            rwasm_fuel_policy::SyscallFuelParams,
+        >,
+    ) {
+        self.syscall_fuel_params = syscall_fuel_params;
     }
 
     fn compile_function(

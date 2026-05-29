@@ -145,14 +145,14 @@
     (start $f)))
 
 ;; cross-function fuel works
-(assert_fuel 3
+(assert_fuel 12
   (module
     (func $f
       call $other
     )
     (func $other)
     (start $f)))
-(assert_fuel 5
+(assert_fuel 14
   (module
     (func $f
       i32.const 0
@@ -162,7 +162,7 @@
     )
     (func $other (param i32))
     (start $f)))
-(assert_fuel 4
+(assert_fuel 13
   (module
     (func $f
       call $other
@@ -172,7 +172,7 @@
       i32.const 0
     )
     (start $f)))
-(assert_fuel 4
+(assert_fuel 13
   (module
     (func $f
       i32.const 0
