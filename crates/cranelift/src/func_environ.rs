@@ -19,6 +19,10 @@ use cranelift_entity::packed_option::{PackedOption, ReservedValue};
 use cranelift_entity::{EntityRef, PrimaryMap, SecondaryMap};
 use cranelift_frontend::Variable;
 use cranelift_frontend::{FuncInstBuilder, FunctionBuilder};
+use rwasm_fuel_policy::{
+    MEMORY_BYTES_PER_FUEL, MEMORY_BYTES_PER_FUEL_LOG2, TABLE_ELEMS_PER_FUEL,
+    TABLE_ELEMS_PER_FUEL_LOG2,
+};
 use smallvec::{SmallVec, smallvec};
 use std::mem;
 use wasmparser::{FuncValidator, Operator, WasmFeatures, WasmModuleResources};
@@ -659,6 +663,162 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
             }
             _ => {}
         }
+    }
+
+    fn fuel_delta_as_i64(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        delta: ir::Value,
+    ) -> ir::Value {
+        match builder.func.dfg.value_type(delta) {
+            I64 => delta,
+            _ => builder.ins().uextend(I64, delta),
+        }
+    }
+
+    fn rwasm_consume_fuel_for_units(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        units: ir::Value,
+        units_per_fuel: u32,
+        units_per_fuel_log2: u32,
+        round_up: bool,
+    ) {
+        if !self.tunables.consume_fuel {
+            return;
+        }
+
+        self.fuel_increment_var(builder);
+
+        let units = self.fuel_delta_as_i64(builder, units);
+        let units = if round_up {
+            builder.ins().iadd_imm(units, i64::from(units_per_fuel - 1))
+        } else {
+            units
+        };
+        let fuel_delta = builder
+            .ins()
+            .ushr_imm(units, i64::from(units_per_fuel_log2));
+        let fuel = builder.use_var(self.fuel_var);
+        let fuel = builder.ins().iadd(fuel, fuel_delta);
+        builder.def_var(self.fuel_var, fuel);
+        self.fuel_save_from_var(builder);
+    }
+
+    fn rwasm_consume_memory_bytes_fuel(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        bytes: ir::Value,
+    ) {
+        self.rwasm_consume_fuel_for_units(
+            builder,
+            bytes,
+            MEMORY_BYTES_PER_FUEL,
+            MEMORY_BYTES_PER_FUEL_LOG2,
+            true,
+        );
+    }
+
+    fn rwasm_consume_table_elems_fuel(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        elems: ir::Value,
+    ) {
+        self.rwasm_consume_fuel_for_units(
+            builder,
+            elems,
+            TABLE_ELEMS_PER_FUEL,
+            TABLE_ELEMS_PER_FUEL_LOG2,
+            true,
+        );
+    }
+
+    fn rwasm_consume_grow_fuel_on_success(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        grow_result: ir::Value,
+        delta: ir::Value,
+        units_per_fuel: u32,
+        units_per_fuel_log2: u32,
+        round_up: bool,
+    ) {
+        if !self.tunables.consume_fuel {
+            return;
+        }
+
+        let failed = builder.ins().icmp_imm(IntCC::Equal, grow_result, -1);
+        self.rwasm_consume_fuel_unless(
+            builder,
+            failed,
+            delta,
+            units_per_fuel,
+            units_per_fuel_log2,
+            round_up,
+        );
+    }
+
+    fn rwasm_consume_fuel_unless(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        skip: ir::Value,
+        delta: ir::Value,
+        units_per_fuel: u32,
+        units_per_fuel_log2: u32,
+        round_up: bool,
+    ) {
+        if !self.tunables.consume_fuel {
+            return;
+        }
+
+        self.fuel_increment_var(builder);
+
+        let block_skip = builder.create_block();
+        let block_charge = builder.create_block();
+        let block_done = builder.create_block();
+        builder.ins().brif(skip, block_skip, &[], block_charge, &[]);
+
+        builder.seal_block(block_charge);
+        builder.switch_to_block(block_charge);
+        self.rwasm_consume_fuel_for_units(
+            builder,
+            delta,
+            units_per_fuel,
+            units_per_fuel_log2,
+            round_up,
+        );
+        builder.ins().jump(block_done, &[]);
+
+        builder.seal_block(block_skip);
+        builder.switch_to_block(block_skip);
+        builder.ins().jump(block_done, &[]);
+
+        builder.seal_block(block_done);
+        builder.switch_to_block(block_done);
+    }
+
+    fn rwasm_consume_memory_grow_fuel_on_success(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        grow_result: ir::Value,
+        pages: ir::Value,
+        page_size_log2: u8,
+    ) {
+        if !self.tunables.consume_fuel {
+            return;
+        }
+
+        let pages = self.fuel_delta_as_i64(builder, pages);
+        let bytes_per_fuel_log2 = MEMORY_BYTES_PER_FUEL_LOG2 as u8;
+        let fuel_delta = if page_size_log2 >= bytes_per_fuel_log2 {
+            builder
+                .ins()
+                .ishl_imm(pages, i64::from(page_size_log2 - bytes_per_fuel_log2))
+        } else {
+            builder
+                .ins()
+                .ushr_imm(pages, i64::from(bytes_per_fuel_log2 - page_size_log2))
+        };
+        self.rwasm_consume_grow_fuel_on_success(builder, grow_result, fuel_delta, 1, 0, false);
     }
 
     /// Adds `self.fuel_consumed` to the `fuel_var`, zero-ing out the amount of
@@ -2706,8 +2866,16 @@ impl FuncEnvironment<'_> {
         delta: ir::Value,
         init_value: ir::Value,
     ) -> WasmResult<ir::Value> {
-        let mut pos = builder.cursor();
         let table = self.table(table_index);
+        let current_size = self.translate_table_size(builder.cursor(), table_index)?;
+        let desired_size = builder.ins().iadd(delta, current_size);
+        let over_limit = builder.ins().icmp_imm(
+            IntCC::SignedGreaterThan,
+            desired_size,
+            i64::try_from(table.limits.max.unwrap_or(1024)).unwrap_or(i64::MAX),
+        );
+
+        let mut pos = builder.cursor();
         let ty = table.ref_type.heap_type;
         let (table_vmctx, defined_table_index) =
             self.table_vmctx_and_defined_index(&mut pos, table_index);
@@ -2733,7 +2901,16 @@ impl FuncEnvironment<'_> {
         };
 
         let call_inst = pos.ins().call(grow, &args);
-        let result = builder.func.dfg.first_result(call_inst);
+        let result = pos.func.dfg.first_result(call_inst);
+        drop(pos);
+        self.rwasm_consume_fuel_unless(
+            builder,
+            over_limit,
+            delta,
+            TABLE_ELEMS_PER_FUEL,
+            TABLE_ELEMS_PER_FUEL_LOG2,
+            true,
+        );
 
         Ok(self.convert_pointer_to_index_type(builder.cursor(), result, index_type, false))
     }
@@ -2864,7 +3041,10 @@ impl FuncEnvironment<'_> {
         };
 
         args.push(len);
-        builder.ins().call(libcall, &args);
+        drop(pos);
+        self.rwasm_consume_table_elems_fuel(builder, len);
+        let mut pos = builder.cursor();
+        pos.ins().call(libcall, &args);
 
         Ok(())
     }
@@ -3535,10 +3715,13 @@ impl FuncEnvironment<'_> {
 
         let index_type = self.memory(index).idx_type;
         let val = self.cast_index_to_i64(&mut pos, val, index_type);
+        let page_size_log2 = self.memory(index).page_size_log2;
         let call_inst = pos
             .ins()
             .call(memory_grow, &[memory_vmctx, val, defined_memory_index]);
         let result = *pos.func.dfg.inst_results(call_inst).first().unwrap();
+        drop(pos);
+        self.rwasm_consume_memory_grow_fuel_on_success(builder, result, val, page_size_log2);
         let single_byte_pages = match self.memory(index).page_size_log2 {
             16 => false,
             0 => true,
@@ -3663,6 +3846,9 @@ impl FuncEnvironment<'_> {
         } else {
             pos.ins().uextend(I64, len)
         };
+        drop(pos);
+        self.rwasm_consume_memory_bytes_fuel(builder, len);
+        let mut pos = builder.cursor();
         let src_index = pos.ins().iconst(I32, i64::from(src_index.as_u32()));
         let dst_index = pos.ins().iconst(I32, i64::from(dst_index.as_u32()));
         pos.ins()
@@ -3685,6 +3871,9 @@ impl FuncEnvironment<'_> {
         let len = self.cast_index_to_i64(&mut pos, len, self.memory(memory_index).idx_type);
         let (memory_vmctx, defined_memory_index) =
             self.memory_vmctx_and_defined_index(&mut pos, memory_index);
+        drop(pos);
+        self.rwasm_consume_memory_bytes_fuel(builder, len);
+        let mut pos = builder.cursor();
 
         pos.ins().call(
             memory_fill,
@@ -3712,6 +3901,9 @@ impl FuncEnvironment<'_> {
         let vmctx = self.vmctx_val(&mut pos);
 
         let dst = self.cast_index_to_i64(&mut pos, dst, self.memory(memory_index).idx_type);
+        drop(pos);
+        self.rwasm_consume_memory_bytes_fuel(builder, len);
+        let mut pos = builder.cursor();
 
         pos.ins().call(
             memory_init,
@@ -3761,6 +3953,9 @@ impl FuncEnvironment<'_> {
         } else {
             pos.ins().uextend(I64, len)
         };
+        drop(pos);
+        self.rwasm_consume_table_elems_fuel(builder, len);
+        let mut pos = builder.cursor();
         let dst_table_index_arg = pos.ins().iconst(I32, dst_table_index_arg as i64);
         let src_table_index_arg = pos.ins().iconst(I32, src_table_index_arg as i64);
         let vmctx = self.vmctx_val(&mut pos);
@@ -3797,6 +3992,9 @@ impl FuncEnvironment<'_> {
         let dst = self.cast_index_to_i64(&mut pos, dst, index_type);
         let src = pos.ins().uextend(I64, src);
         let len = pos.ins().uextend(I64, len);
+        drop(pos);
+        self.rwasm_consume_table_elems_fuel(builder, len);
+        let mut pos = builder.cursor();
 
         pos.ins().call(
             table_init,
