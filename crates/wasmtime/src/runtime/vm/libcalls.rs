@@ -1252,6 +1252,26 @@ fn out_of_gas(store: &mut dyn VMStore, _instance: InstanceId) -> Result<()> {
     })?
 }
 
+// Hook for when an rwasm fuel region does not fit in the injected fuel.
+//
+// `before` is the fuel counter from before the charge. Refuelling from the reserve (and yielding
+// when an async interval is configured) works exactly as for `out_of_gas`; when no fuel is left
+// the counter is put back to `before` so the refused charge is never applied and
+// `Store::get_fuel` still reports what was available before the region.
+fn rwasm_out_of_fuel(store: &mut dyn VMStore, _instance: InstanceId, before: u64) -> Result<()> {
+    block_on!(store, async |store, _| {
+        if !store.refuel() {
+            store.rwasm_restore_fuel(before as i64);
+            return Err(Trap::OutOfFuel.into());
+        }
+        #[cfg(feature = "async")]
+        if store.fuel_yield_interval.is_some() {
+            store.yield_now().await;
+        }
+        Ok(())
+    })?
+}
+
 // Hook for when an instance observes that the epoch has changed.
 #[cfg(target_has_atomic = "64")]
 fn new_epoch(store: &mut dyn VMStore, _instance: InstanceId) -> Result<NextEpoch> {

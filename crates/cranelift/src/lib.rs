@@ -76,10 +76,6 @@ pub const TRAP_CAST_FAILURE: TrapCode =
     TrapCode::unwrap_user(Trap::CastFailure as u8 + TRAP_OFFSET);
 pub const TRAP_DISABLED_OPCODE: TrapCode =
     TrapCode::unwrap_user(Trap::DisabledOpcode as u8 + TRAP_OFFSET);
-/// Raised by the rwasm fuel scheme when a metering region does not fit in the remaining fuel.
-/// It is a plain trap rather than the `out_of_gas` libcall so that the failed charge is never
-/// written to the store, matching the rwasm VM's `try_consume_fuel`.
-pub const TRAP_OUT_OF_FUEL: TrapCode = TrapCode::unwrap_user(Trap::OutOfFuel as u8 + TRAP_OFFSET);
 
 /// Creates a new cranelift `Signature` with no wasm params/results for the
 /// given calling convention.

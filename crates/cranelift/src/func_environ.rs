@@ -444,7 +444,7 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
         let after = builder.ins().iadd_imm(before, Imm64::new(0));
         let charge_inst = builder.func.dfg.value_def(after).unwrap_inst();
         self.fuel_region.as_mut().unwrap().charge_inst = Some(charge_inst);
-        self.fuel_check_and_publish(builder, after);
+        self.fuel_check_and_publish(builder, before, after);
     }
 
     /// Closes the open region, patching its entry charge with the final cost.
@@ -471,23 +471,57 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
     fn fuel_charge(&mut self, builder: &mut FunctionBuilder<'_>, delta: ir::Value) {
         let before = builder.use_var(self.fuel_var);
         let after = builder.ins().iadd(before, delta);
-        self.fuel_check_and_publish(builder, after);
+        self.fuel_check_and_publish(builder, before, after);
     }
 
-    /// Makes `after` the new fuel counter: traps with `OutOfFuel` when it exceeds the limit,
-    /// otherwise caches it in `fuel_var` and publishes it to `VMStoreContext`.
+    /// Charges a fixed `cost` right here, outside the region model. Used for work whose amount
+    /// is only known at run time, such as one unit per element written by a GC array fill.
+    pub(crate) fn fuel_charge_const(&mut self, builder: &mut FunctionBuilder<'_>, cost: u32) {
+        if !self.tunables.consume_fuel || cost == 0 {
+            return;
+        }
+        let before = builder.use_var(self.fuel_var);
+        let after = builder.ins().iadd_imm(before, Imm64::new(i64::from(cost)));
+        self.fuel_check_and_publish(builder, before, after);
+    }
+
+    /// Makes `after` the new fuel counter and publishes it to `VMStoreContext`.
     ///
     /// The counter is a negative number counting up towards zero; a positive value means the
-    /// limit was exceeded. The trap sits before the store on purpose: a charge that does not
-    /// fit is never applied, so `Store::get_fuel` reports the same remaining fuel as the rwasm
-    /// VM does after its `try_consume_fuel` fails.
-    fn fuel_check_and_publish(&mut self, builder: &mut FunctionBuilder<'_>, after: ir::Value) {
+    /// injected fuel is exhausted. That case goes through the `rwasm_out_of_fuel` libcall, which
+    /// refuels from the store's reserve (yielding when an async interval is configured) or, when
+    /// nothing is left, puts `before` back and traps with `OutOfFuel`. A charge that does not fit
+    /// is therefore never applied, so `Store::get_fuel` reports the same remaining fuel as the
+    /// rwasm VM does after its `try_consume_fuel` fails.
+    fn fuel_check_and_publish(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        before: ir::Value,
+        after: ir::Value,
+    ) {
+        builder.def_var(self.fuel_var, after);
+        self.fuel_save_from_var(builder);
         let exceeded = builder
             .ins()
             .icmp_imm(IntCC::SignedGreaterThan, after, Imm64::new(0));
-        self.trapnz(builder, exceeded, crate::TRAP_OUT_OF_FUEL);
-        builder.def_var(self.fuel_var, after);
-        self.fuel_save_from_var(builder);
+        let out_of_fuel_block = builder.create_block();
+        let continuation_block = builder.create_block();
+        builder.set_cold_block(out_of_fuel_block);
+        builder
+            .ins()
+            .brif(exceeded, out_of_fuel_block, &[], continuation_block, &[]);
+        builder.seal_block(out_of_fuel_block);
+
+        builder.switch_to_block(out_of_fuel_block);
+        let out_of_fuel = self.builtin_functions.rwasm_out_of_fuel(builder.func);
+        let vmctx = self.vmctx_val(&mut builder.cursor());
+        builder.ins().call(out_of_fuel, &[vmctx, before]);
+        // The libcall may have injected fresh fuel, so the cached copy is stale.
+        self.fuel_load_into_var(builder);
+        builder.ins().jump(continuation_block, &[]);
+        builder.seal_block(continuation_block);
+
+        builder.switch_to_block(continuation_block);
     }
 
     fn fuel_before_op(&mut self, op: &Operator<'_>, builder: &mut FunctionBuilder<'_>) {
@@ -541,7 +575,7 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
             SyscallFuelParams::Const(base) => {
                 let before = builder.use_var(self.fuel_var);
                 let after = builder.ins().iadd_imm(before, Imm64::new(*base as i64));
-                self.fuel_check_and_publish(builder, after);
+                self.fuel_check_and_publish(builder, before, after);
             }
             SyscallFuelParams::LinearFuel(LinearFuelParams {
                 base_fuel,

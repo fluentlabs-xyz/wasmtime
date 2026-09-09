@@ -2417,6 +2417,12 @@ impl StoreOpaque {
         )
     }
 
+    /// Puts the VM fuel counter back to `before`, its value before a region charge that turned
+    /// out not to fit. The rwasm fuel scheme never applies a refused charge.
+    pub(crate) fn rwasm_restore_fuel(&mut self, before: i64) {
+        unsafe { *self.vm_store_context.fuel_consumed.get() = before };
+    }
+
     pub fn set_fuel(&mut self, fuel: u64) -> Result<()> {
         crate::ensure!(
             self.engine().tunables().consume_fuel,

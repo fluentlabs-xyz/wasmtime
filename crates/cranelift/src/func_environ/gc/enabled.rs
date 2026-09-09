@@ -826,6 +826,9 @@ fn emit_array_fill_impl(
     // element's address, and then jump back to the loop header block.
     builder.switch_to_block(loop_body_block);
     log::trace!("emit_array_fill_impl: loop body");
+    // Every element written is metered, so a huge array cannot be filled for the price of the
+    // single `array.new*`/`array.fill` operator that requested it.
+    func_env.fuel_charge_const(builder, crate::rwasm_fuel::BASE_FUEL_COST);
     emit_elem_write(func_env, builder, elem_addr)?;
     let next_elem_addr = builder.ins().iadd(elem_addr, elem_size);
     builder

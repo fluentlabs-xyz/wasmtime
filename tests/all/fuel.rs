@@ -232,9 +232,12 @@ fn host_function_consumes_all(config: &mut Config) -> Result<()> {
     let mut store = Store::new(&engine, ());
     store.set_fuel(FUEL).unwrap();
     let func = Func::wrap(&mut store, |mut caller: Caller<'_, ()>| {
+        // The caller's whole region is charged on entry: 1 for the function plus 10 for each of
+        // the two calls, so the second call is already paid for when the host runs.
         let remaining = caller.get_fuel().unwrap();
-        assert_eq!(remaining, FUEL - 11);
-        assert!(caller.set_fuel(1).is_ok());
+        assert_eq!(remaining, FUEL - 21);
+        // Leave nothing: `$other` costs 1 on entry, which no longer fits.
+        assert!(caller.set_fuel(0).is_ok());
     });
 
     let instance = Instance::new(&mut store, &module, &[func.into()]).unwrap();
@@ -300,9 +303,11 @@ fn unconditionally_trapping_memory_accesses_save_fuel_before_trapping(
     Ok(())
 }
 
-#[wasmtime_test]
+// Winch keeps Wasmtime's stock fuel codegen; the rwasm rules below only hold for the
+// Cranelift strategies, which are the only ones rwasm selects.
+#[wasmtime_test(strategies(not(Winch)))]
 #[cfg_attr(miri, ignore)]
-fn get_fuel_clamps_at_zero(config: &mut Config) -> Result<()> {
+fn refused_charge_is_not_applied(config: &mut Config) -> Result<()> {
     config.consume_fuel(true);
     let engine = Engine::new(config)?;
     let mut store = Store::new(&engine, ());
@@ -326,21 +331,21 @@ fn get_fuel_clamps_at_zero(config: &mut Config) -> Result<()> {
     add2.call(&mut store, 10)?;
     assert_eq!(store.get_fuel()?, 2);
 
-    // One more invocation of the function would technically take us to -2 fuel,
-    // but that's not representable, so the store should report 0 fuel after
-    // this completes.
-    add2.call(&mut store, 10)?;
-    assert_eq!(store.get_fuel()?, 0);
-
-    // Any further attempts should fail.
-    assert!(add2.call(&mut store, 10).is_err());
+    // Another invocation needs 4 fuel but only 2 are left. The rwasm fuel scheme refuses the
+    // whole charge up front: the call traps with `OutOfFuel` and the store still reports the 2
+    // units that were available before it.
+    let err = add2.call(&mut store, 10).unwrap_err();
+    assert_eq!(err.downcast::<Trap>()?, Trap::OutOfFuel);
+    assert_eq!(store.get_fuel()?, 2);
 
     Ok(())
 }
 
-#[wasmtime_test]
+// Winch keeps Wasmtime's stock fuel codegen; the rwasm rules below only hold for the
+// Cranelift strategies, which are the only ones rwasm selects.
+#[wasmtime_test(strategies(not(Winch)))]
 #[cfg_attr(miri, ignore)]
-fn immediate_trap_with_fuel1(config: &mut Config) -> Result<()> {
+fn empty_function_costs_exactly_one_fuel(config: &mut Config) -> Result<()> {
     config.consume_fuel(true);
     let engine = Engine::new(config)?;
     let mut store = Store::new(&engine, ());
@@ -356,9 +361,17 @@ fn immediate_trap_with_fuel1(config: &mut Config) -> Result<()> {
 
     let instance = Instance::new(&mut store, &module, &[])?;
     let main = instance.get_typed_func::<(), ()>(&mut store, "main")?;
-    store.set_fuel(1)?;
 
-    assert!(main.call(&mut store, ()).is_err());
+    // Consuming exactly the available fuel is not out of fuel.
+    store.set_fuel(1)?;
+    main.call(&mut store, ())?;
+    assert_eq!(store.get_fuel()?, 0);
+
+    // With nothing left, the function entry itself is refused and nothing is charged.
+    store.set_fuel(0)?;
+    let err = main.call(&mut store, ()).unwrap_err();
+    assert_eq!(err.downcast::<Trap>()?, Trap::OutOfFuel);
+    assert_eq!(store.get_fuel()?, 0);
 
     Ok(())
 }
@@ -385,6 +398,7 @@ fn ensure_stack_alignment(config: &mut Config) -> Result<()> {
 
 #[wasmtime_test]
 #[cfg_attr(miri, ignore)]
+#[ignore = "operator costs are fixed by rwasm-fuel-policy; Config::operator_cost is not honoured"]
 fn custom_operator_cost(config: &mut Config) -> Result<()> {
     config.consume_fuel(true);
     let op_cost = OperatorCost {
