@@ -23,7 +23,6 @@ use cranelift_entity::{EntityRef, PrimaryMap, SecondaryMap};
 use cranelift_frontend::Variable;
 use cranelift_frontend::{FuncInstBuilder, FunctionBuilder};
 use smallvec::{SmallVec, smallvec};
-use std::mem;
 use wasmparser::{FuncValidator, Operator, WasmFeatures, WasmModuleResources};
 use wasmtime_core::math::f64_cvt_to_int_bounds;
 use wasmtime_environ::{
@@ -126,6 +125,16 @@ macro_rules! declare_function_signatures {
 wasmtime_environ::foreach_builtin_function!(declare_function_signatures);
 
 /// The `FuncEnvironment` implementation for use by the `ModuleEnvironment`.
+/// One rwasm metering region: a straight-line stretch of code whose whole cost is charged and
+/// checked when it is entered, mirroring a `ConsumeFuel` instruction in the rwasm bytecode.
+struct FuelRegion {
+    /// The `iadd_imm` applying the region's cost, once the first non-zero charge emitted it.
+    /// Its immediate is patched with the final cost when the region closes.
+    charge_inst: Option<ir::Inst>,
+    /// Cost accumulated so far.
+    cost: u64,
+}
+
 pub struct FuncEnvironment<'module_environment> {
     compiler: &'module_environment Compiler,
     isa: &'module_environment (dyn TargetIsa + 'module_environment),
@@ -200,7 +209,9 @@ pub struct FuncEnvironment<'module_environment> {
     /// spill, and this isn't any worse than reloading each time.
     epoch_ptr_var: cranelift_frontend::Variable,
 
-    fuel_consumed: i64,
+    /// The metering region currently being translated, present while fuel is enabled and the
+    /// code is reachable. See [`Self::fuel_region_open`].
+    fuel_region: Option<FuelRegion>,
 
     /// A `GlobalValue` in CLIF which represents the stack limit.
     ///
@@ -278,9 +289,7 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
             epoch_deadline_var: Variable::reserved_value(),
             epoch_ptr_var: Variable::reserved_value(),
 
-            // Start with at least one fuel being consumed because even empty
-            // functions should consume at least some fuel.
-            fuel_consumed: 1,
+            fuel_region: None,
 
             translation,
 
@@ -377,119 +386,123 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
         builder.ins().global_value(self.pointer_type(), global)
     }
 
+    /// Starts fuel metering for the function being translated.
+    ///
+    /// The store's counter is cached in `fuel_var` and the function-level region is opened with
+    /// the entry cost, so even an empty function is charged `BASE_FUEL_COST`, exactly like the
+    /// function-level `ConsumeFuel` the rwasm translator emits.
     fn fuel_function_entry(&mut self, builder: &mut FunctionBuilder<'_>) {
-        // On function entry we load the amount of fuel into a function-local
-        // `self.fuel_var` to make fuel modifications fast locally. This cache
-        // is then periodically flushed to the Store-defined location in
-        // `VMStoreContext` later.
         debug_assert!(self.fuel_var.is_reserved_value());
         self.fuel_var = builder.declare_var(ir::types::I64);
         self.fuel_load_into_var(builder);
-        self.fuel_check(builder);
+        self.fuel_region_open(builder);
+        self.fuel_region_charge(builder, rwasm_fuel::BASE_FUEL_COST);
     }
 
+    /// Finishes fuel metering for the function: the last region receives its final cost.
+    ///
+    /// Nothing has to be written back to the store here. Every charge is published the moment
+    /// it is made, so the store is current on every exit path, including traps.
     fn fuel_function_exit(&mut self, builder: &mut FunctionBuilder<'_>) {
-        // On exiting the function we need to be sure to save the fuel we have
-        // cached locally in `self.fuel_var` back into the Store-defined
-        // location.
+        self.fuel_region_close(builder);
+    }
+
+    /// Opens a new metering region at the current position, closing the previous one.
+    ///
+    /// Regions mirror the `ConsumeFuel` placement of the rwasm translator: one per function
+    /// entry, loop header, `if` arm, `else` arm, the code following any `end`, and the
+    /// fall-through after `br_if`. The charge itself is emitted lazily by
+    /// [`Self::fuel_region_charge`], so a region made only of free operators costs no code.
+    fn fuel_region_open(&mut self, builder: &mut FunctionBuilder<'_>) {
+        self.fuel_region_close(builder);
+        self.fuel_region = Some(FuelRegion {
+            charge_inst: None,
+            cost: 0,
+        });
+    }
+
+    /// Adds `cost` to the open region.
+    ///
+    /// The first non-zero charge emits the region's entry sequence right here, ahead of the
+    /// operator that triggered it: `fuel_var += <cost>` with a placeholder immediate, an
+    /// `OutOfFuel` trap when the limit is exceeded, and a store of the new counter. The
+    /// immediate is patched with the region's total when the region closes, so the whole region
+    /// is paid for before its first metered instruction runs, as on rwasm.
+    fn fuel_region_charge(&mut self, builder: &mut FunctionBuilder<'_>, cost: u32) {
+        if cost == 0 {
+            return;
+        }
+        let region = self
+            .fuel_region
+            .as_mut()
+            .expect("a fuel region is open while translating reachable code");
+        region.cost += u64::from(cost);
+        if region.charge_inst.is_some() {
+            return;
+        }
+        let before = builder.use_var(self.fuel_var);
+        let after = builder.ins().iadd_imm(before, Imm64::new(0));
+        let charge_inst = builder.func.dfg.value_def(after).unwrap_inst();
+        self.fuel_region.as_mut().unwrap().charge_inst = Some(charge_inst);
+        self.fuel_check_and_publish(builder, after);
+    }
+
+    /// Closes the open region, patching its entry charge with the final cost.
+    fn fuel_region_close(&mut self, builder: &mut FunctionBuilder<'_>) {
+        let Some(region) = self.fuel_region.take() else {
+            return;
+        };
+        let Some(charge_inst) = region.charge_inst else {
+            debug_assert_eq!(region.cost, 0);
+            return;
+        };
+        let cost = i64::try_from(region.cost).expect("region fuel cost fits in i64");
+        match &mut builder.func.dfg.insts[charge_inst] {
+            ir::InstructionData::BinaryImm64 {
+                opcode: ir::Opcode::IaddImm,
+                imm,
+                ..
+            } => *imm = Imm64::new(cost),
+            other => unreachable!("fuel region charge must be an `iadd_imm`, found {other:?}"),
+        }
+    }
+
+    /// Charges the `i64` value `delta` to the fuel counter at the current position.
+    fn fuel_charge(&mut self, builder: &mut FunctionBuilder<'_>, delta: ir::Value) {
+        let before = builder.use_var(self.fuel_var);
+        let after = builder.ins().iadd(before, delta);
+        self.fuel_check_and_publish(builder, after);
+    }
+
+    /// Makes `after` the new fuel counter: traps with `OutOfFuel` when it exceeds the limit,
+    /// otherwise caches it in `fuel_var` and publishes it to `VMStoreContext`.
+    ///
+    /// The counter is a negative number counting up towards zero; a positive value means the
+    /// limit was exceeded. The trap sits before the store on purpose: a charge that does not
+    /// fit is never applied, so `Store::get_fuel` reports the same remaining fuel as the rwasm
+    /// VM does after its `try_consume_fuel` fails.
+    fn fuel_check_and_publish(&mut self, builder: &mut FunctionBuilder<'_>, after: ir::Value) {
+        let exceeded = builder
+            .ins()
+            .icmp_imm(IntCC::SignedGreaterThan, after, Imm64::new(0));
+        self.trapnz(builder, exceeded, crate::TRAP_OUT_OF_FUEL);
+        builder.def_var(self.fuel_var, after);
         self.fuel_save_from_var(builder);
     }
 
     fn fuel_before_op(&mut self, op: &Operator<'_>, builder: &mut FunctionBuilder<'_>) {
         if !self.is_reachable() {
-            // In unreachable code we shouldn't have any leftover fuel we
-            // haven't accounted for since the reason for us to become
-            // unreachable should have already added it to `self.fuel_var`.
-            debug_assert_eq!(self.fuel_consumed, 0);
             return;
         }
-
-        self.fuel_consumed += rwasm_fuel::rwasm_fuel_for_operator(op) as i64;
-
-        match op {
-            // Before each disabled opcode we must make sure that all opcodes are emitted.
-            #[cfg(not(feature = "full-wasm-mode"))]
-            op if rwasm_fuel::is_rwasm_operator_disabled(op) && self.fuel_consumed > 0 => {
-                self.fuel_increment_var(builder);
-                self.fuel_save_from_var(builder);
-            }
-
-            // Exiting a function (via a return or unreachable) or otherwise
-            // entering a different function (via a call) means that we need to
-            // update the fuel consumption in `VMStoreContext` because we're
-            // about to move control out of this function itself and the fuel
-            // may need to be read.
-            //
-            // Before this we need to update the fuel counter from our own cost
-            // leading up to this function call, and then we can store
-            // `self.fuel_var` into `VMStoreContext`.
-            Operator::Unreachable
-            | Operator::Return
-            | Operator::CallIndirect { .. }
-            | Operator::Call { .. }
-            | Operator::ReturnCall { .. }
-            | Operator::ReturnCallRef { .. }
-            | Operator::ReturnCallIndirect { .. }
-            | Operator::Throw { .. } | Operator::ThrowRef => {
-                self.fuel_increment_var(builder);
-                self.fuel_save_from_var(builder);
-            }
-
-            // To ensure all code preceding a loop is only counted once we
-            // update the fuel variable on entry.
-            Operator::Loop { .. }
-
-            // Entering into an `if` block means that the edge we take isn't
-            // known until runtime, so we need to update our fuel consumption
-            // before we take the branch.
-            | Operator::If { .. }
-
-            // Control-flow instructions mean that we're moving to the end/exit
-            // of a block somewhere else. That means we need to update the fuel
-            // counter since we're effectively terminating our basic block.
-            | Operator::Br { .. }
-            | Operator::BrIf { .. }
-            | Operator::BrTable { .. }
-            | Operator::BrOnNull { .. }
-            | Operator::BrOnNonNull { .. }
-            | Operator::BrOnCast { .. }
-            | Operator::BrOnCastFail { .. }
-
-            // Exiting a scope means that we need to update the fuel
-            // consumption because there are multiple ways to exit a scope and
-            // this is the only time we have to account for instructions
-            // executed so far.
-            | Operator::End
-
-            // This is similar to `end`, except that it's only the terminator
-            // for an `if` block. The same reasoning applies though in that we
-            // are terminating a basic block and need to update the fuel
-            // variable.
-            | Operator::Else => self.fuel_increment_var(builder),
-
-            // This is a normal instruction where the fuel is buffered to later
-            // get added to `self.fuel_var`.
-            //
-            // Note that we generally ignore instructions which may trap and
-            // therefore result in exiting a block early. Current usage of fuel
-            // means that it's not too important to account for a precise amount
-            // of fuel consumed but rather "close to the actual amount" is good
-            // enough. For 100% precise counting, however, we'd probably need to
-            // not only increment but also save the fuel amount more often
-            // around trapping instructions. (see the `unreachable` instruction
-            // case above)
-            //
-            // Note that `Block` is specifically omitted from incrementing the
-            // fuel variable. Control flow entering a `block` is unconditional
-            // which means it's effectively executing straight-line code. We'll
-            // update the counter when exiting a block, but we shouldn't need to
-            // do so upon entering a block.
-            _ => {}
-        }
-
+        // Every operator, including the ones that end a region (`if`, `br_if`, `br`, ...), is
+        // charged to the region it appears in. Regions are opened in `fuel_after_op` and
+        // `translate_loop_header`.
+        self.fuel_region_charge(builder, rwasm_fuel::rwasm_fuel_for_operator(op));
         self.rwasm_eval_fuel_policy(op, builder);
     }
 
+    /// Charges the syscall fuel configured for an imported function right before the call,
+    /// which is where the rwasm import trampoline charges it.
     fn rwasm_eval_fuel_policy(&mut self, op: &Operator<'_>, builder: &mut FunctionBuilder<'_>) {
         use rwasm_fuel_policy::*;
         use wasmtime_environ::EntityType;
@@ -516,45 +529,36 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
             _ => return,
         };
 
+        // Rounds a byte count up to 32-byte words. The arithmetic stays 32-bit on purpose so it
+        // wraps exactly like the `i32` instructions rwasm emits for the same formula.
+        fn words(builder: &mut FunctionBuilder<'_>, bytes: ir::Value) -> ir::Value {
+            let rounded = builder.ins().iadd_imm(bytes, Imm64::new(31));
+            builder.ins().udiv_imm(rounded, Imm64::new(32))
+        }
+
         match policy {
+            SyscallFuelParams::None => {}
             SyscallFuelParams::Const(base) => {
-                self.fuel_consumed += *base as i64;
-                self.fuel_increment_var(builder);
-                self.fuel_save_from_var(builder);
+                let before = builder.use_var(self.fuel_var);
+                let after = builder.ins().iadd_imm(before, Imm64::new(*base as i64));
+                self.fuel_check_and_publish(builder, after);
             }
             SyscallFuelParams::LinearFuel(LinearFuelParams {
                 base_fuel,
                 param_index,
                 word_cost,
             }) => {
-                self.fuel_consumed += *base_fuel as i64;
-                self.fuel_increment_var(builder);
-
-                let linear_param = self.stacks.peekn(*param_index as usize)[0];
-                let cmp = builder.ins().icmp_imm(
-                    IntCC::UnsignedGreaterThan,
-                    linear_param,
-                    Imm64::new(FUEL_MAX_LINEAR_X as i64),
-                );
-                let block_ok = builder.create_block();
-                let block_trap = builder.create_block();
-                builder.ins().brif(cmp, block_trap, &[], block_ok, &[]);
-                builder.seal_block(block_trap);
-                builder.switch_to_block(block_trap);
-                builder.ins().trap(ir::TrapCode::INTEGER_OVERFLOW);
-
-                builder.seal_block(block_ok);
-                builder.switch_to_block(block_ok);
-
-                let new_value = builder.ins().iadd_imm(linear_param, Imm64::new(31));
-                let new_value = builder.ins().udiv_imm(new_value, Imm64::new(32));
-                let new_value = builder
+                let bytes = self.stacks.peekn(*param_index as usize)[0];
+                self.fuel_trap_if_above(builder, bytes, FUEL_MAX_LINEAR_X);
+                let words = words(builder, bytes);
+                let fuel = builder
                     .ins()
-                    .imul_imm(new_value, Imm64::new(*word_cost as i64));
-                let fuel = builder.use_var(self.fuel_var);
-                let fuel = builder.ins().iadd(fuel, new_value);
-                builder.def_var(self.fuel_var, fuel);
-                self.fuel_save_from_var(builder);
+                    .imul_imm(words, Imm64::new(i64::from(*word_cost)));
+                let fuel = builder
+                    .ins()
+                    .iadd_imm(fuel, Imm64::new(i64::from(*base_fuel)));
+                let fuel = builder.ins().uextend(ir::types::I64, fuel);
+                self.fuel_charge(builder, fuel);
             }
             SyscallFuelParams::QuadraticFuel(QuadraticFuelParams {
                 local_depth,
@@ -562,79 +566,62 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
                 divisor,
                 fuel_denom_rate,
             }) => {
-                let local_depth = self.stacks.peekn(*local_depth as usize)[0];
-                let cmp = builder.ins().icmp_imm(
-                    IntCC::UnsignedGreaterThan,
-                    local_depth,
-                    Imm64::new(FUEL_MAX_QUADRATIC_X as i64),
-                );
-                let block_ok = builder.create_block();
-                let block_trap = builder.create_block();
-                builder.ins().brif(cmp, block_trap, &[], block_ok, &[]);
-                builder.seal_block(block_trap);
-                builder.switch_to_block(block_trap);
-                builder.ins().trap(ir::TrapCode::INTEGER_OVERFLOW);
-
-                builder.seal_block(block_ok);
-                builder.switch_to_block(block_ok);
-
-                let compute_words = |builder: &mut FunctionBuilder, value: ir::Value| {
-                    let t = builder.ins().iadd_imm(value, Imm64::new(31));
-                    builder.ins().udiv_imm(t, Imm64::new(32))
-                };
-
-                let linear_words = compute_words(builder, local_depth);
-
-                let linear_part = builder
+                let bytes = self.stacks.peekn(*local_depth as usize)[0];
+                self.fuel_trap_if_above(builder, bytes, FUEL_MAX_QUADRATIC_X);
+                let words = words(builder, bytes);
+                let linear = builder
                     .ins()
-                    .imul_imm(linear_words, Imm64::new(*word_cost as i64));
-
-                let w1 = compute_words(builder, local_depth);
-                let w2 = compute_words(builder, local_depth);
-
-                let quadratic_mul = builder.ins().imul(w1, w2);
-
-                let quadratic_div = builder
+                    .imul_imm(words, Imm64::new(i64::from(*word_cost)));
+                let squared = builder.ins().imul(words, words);
+                let quadratic = builder
                     .ins()
-                    .udiv_imm(quadratic_mul, Imm64::new(*divisor as i64));
-
-                let sum = builder.ins().iadd(linear_part, quadratic_div);
-
-                let fuel_after_rate = builder
+                    .udiv_imm(squared, Imm64::new(i64::from(*divisor)));
+                let sum = builder.ins().iadd(linear, quadratic);
+                let fuel = builder
                     .ins()
-                    .imul_imm(sum, Imm64::new(*fuel_denom_rate as i64));
-
-                let fuel = builder.use_var(self.fuel_var);
-                let fuel = builder.ins().iadd(fuel, fuel_after_rate);
-                builder.def_var(self.fuel_var, fuel);
-                self.fuel_save_from_var(builder)
+                    .imul_imm(sum, Imm64::new(i64::from(*fuel_denom_rate)));
+                let fuel = builder.ins().uextend(ir::types::I64, fuel);
+                self.fuel_charge(builder, fuel);
             }
-            _ => {}
         }
+    }
+
+    /// Traps with `IntegerOverflow` when the `i32` syscall parameter `value` exceeds `max`,
+    /// before any syscall fuel is charged, matching the guard the rwasm trampoline runs first.
+    fn fuel_trap_if_above(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        value: ir::Value,
+        max: u32,
+    ) {
+        let above = builder.ins().icmp_imm(
+            IntCC::UnsignedGreaterThan,
+            value,
+            Imm64::new(i64::from(max)),
+        );
+        self.trapnz(builder, above, ir::TrapCode::INTEGER_OVERFLOW);
     }
 
     fn fuel_after_op(&mut self, op: &Operator<'_>, builder: &mut FunctionBuilder<'_>) {
-        // After a function call we need to reload our fuel value since the
-        // function may have changed it.
         match op {
+            // The callee updated the store's counter, so the cached copy is stale.
             Operator::Call { .. } | Operator::CallIndirect { .. } => {
                 self.fuel_load_into_var(builder);
             }
+            // The rwasm translator starts a fresh `ConsumeFuel` for the `then` arm, the `else`
+            // arm and the fall-through after `br_if`; the builder already sits in that block.
+            Operator::If { .. } | Operator::Else | Operator::BrIf { .. } => {
+                self.fuel_region_open(builder);
+            }
+            // The same goes for the code following any `end`, except the function body's own
+            // `end`, which only returns.
+            Operator::End => {
+                if !self.stacks.control_stack.is_empty() {
+                    self.fuel_region_open(builder);
+                }
+            }
             _ => {}
         }
-    }
-
-    /// Adds `self.fuel_consumed` to the `fuel_var`, zero-ing out the amount of
-    /// fuel consumed at that point.
-    pub fn fuel_increment_var(&mut self, builder: &mut FunctionBuilder<'_>) {
-        let consumption = mem::replace(&mut self.fuel_consumed, 0);
-        if consumption == 0 {
-            return;
-        }
-
-        let fuel = builder.use_var(self.fuel_var);
-        let fuel = builder.ins().iadd_imm(fuel, consumption);
-        builder.def_var(self.fuel_var, fuel);
     }
 
     /// Loads the fuel consumption value from `VMStoreContext` into `self.fuel_var`
@@ -648,7 +635,7 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
 
     /// Stores the fuel consumption value from `self.fuel_var` into
     /// `VMStoreContext`.
-    pub fn fuel_save_from_var(&mut self, builder: &mut FunctionBuilder<'_>) {
+    fn fuel_save_from_var(&mut self, builder: &mut FunctionBuilder<'_>) {
         let (addr, offset) = self.fuel_addr_offset(builder);
         let fuel_consumed = builder.use_var(self.fuel_var);
         builder
@@ -667,48 +654,6 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
             vmstore_ctx,
             i32::from(self.offsets.ptr.vmstore_context_fuel_consumed()).into(),
         )
-    }
-
-    /// Checks the amount of remaining, and if we've run out of fuel we call
-    /// the out-of-fuel function.
-    fn fuel_check(&mut self, builder: &mut FunctionBuilder) {
-        self.fuel_increment_var(builder);
-        let out_of_gas_block = builder.create_block();
-        let continuation_block = builder.create_block();
-
-        // Note that our fuel is encoded as adding positive values to a
-        // negative number. Whenever the negative number goes positive that
-        // means we ran out of fuel.
-        //
-        // Compare to see if our fuel is positive, and if so we ran out of gas.
-        // Otherwise we can continue on like usual.
-        let zero = builder.ins().iconst(ir::types::I64, 0);
-        let fuel = builder.use_var(self.fuel_var);
-        let cmp = builder
-            .ins()
-            .icmp(IntCC::SignedGreaterThanOrEqual, fuel, zero);
-        builder
-            .ins()
-            .brif(cmp, out_of_gas_block, &[], continuation_block, &[]);
-        builder.seal_block(out_of_gas_block);
-
-        // If we ran out of gas then we call our out-of-gas intrinsic and it
-        // figures out what to do. Note that this may raise a trap, or do
-        // something like yield to an async runtime. In either case we don't
-        // assume what happens and handle the case the intrinsic returns.
-        //
-        // Note that we save/reload fuel around this since the out-of-gas
-        // intrinsic may alter how much fuel is in the system.
-        builder.switch_to_block(out_of_gas_block);
-        self.fuel_save_from_var(builder);
-        let out_of_gas = self.builtin_functions.out_of_gas(builder.func);
-        let vmctx = self.vmctx_val(&mut builder.cursor());
-        builder.ins().call(out_of_gas, &[vmctx]);
-        self.fuel_load_into_var(builder);
-        builder.ins().jump(continuation_block, &[]);
-        builder.seal_block(continuation_block);
-
-        builder.switch_to_block(continuation_block);
     }
 
     fn epoch_function_entry(&mut self, builder: &mut FunctionBuilder<'_>) {
@@ -3734,10 +3679,10 @@ impl FuncEnvironment<'_> {
     }
 
     pub fn translate_loop_header(&mut self, builder: &mut FunctionBuilder) -> WasmResult<()> {
-        // Additionally if enabled check how much fuel we have remaining to see
-        // if we've run out by this point.
+        // Every iteration enters a fresh metering region at the header, the way the rwasm
+        // translator emits a `ConsumeFuel` right after the loop label.
         if self.tunables.consume_fuel {
-            self.fuel_check(builder);
+            self.fuel_region_open(builder);
         }
 
         // If we are performing epoch-based interruption, check to see
@@ -3784,11 +3729,12 @@ impl FuncEnvironment<'_> {
         Ok(())
     }
 
-    pub fn before_unconditionally_trapping_memory_access(&mut self, builder: &mut FunctionBuilder) {
-        if self.tunables.consume_fuel {
-            self.fuel_increment_var(builder);
-            self.fuel_save_from_var(builder);
-        }
+    pub fn before_unconditionally_trapping_memory_access(
+        &mut self,
+        _builder: &mut FunctionBuilder,
+    ) {
+        // Fuel is published to the store when its region is entered, so there is nothing to
+        // flush ahead of a trap.
     }
 
     pub fn before_translate_function(&mut self, builder: &mut FunctionBuilder) -> WasmResult<()> {
@@ -3827,7 +3773,9 @@ impl FuncEnvironment<'_> {
     }
 
     pub fn after_translate_function(&mut self, builder: &mut FunctionBuilder) -> WasmResult<()> {
-        if self.tunables.consume_fuel && self.is_reachable() {
+        // The last region must be closed even when the function's end is unreachable: closing
+        // only patches the cost of code that was already emitted.
+        if self.tunables.consume_fuel {
             self.fuel_function_exit(builder);
         }
         self.finish_debug_metadata(builder);

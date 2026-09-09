@@ -1,10 +1,14 @@
-use wasmparser::Operator;
+//! The rwasm fuel schedule as seen by Cranelift.
+//!
+//! The per-operator table below must stay identical to `rwasm_fuel_policy::rwasm_fuel_for_operator`
+//! and `rwasm_fuel_policy::is_rwasm_operator_disabled`. It cannot simply delegate to them because
+//! the policy crate pins a different `wasmparser` than this crate, so the `Operator` types differ.
+//! The cost constants are shared, so at least the numbers cannot drift.
 
-pub const BASE_FUEL_COST: u32 = 1;
-pub const ENTITY_FUEL_COST: u32 = 3;
-pub const LOAD_FUEL_COST: u32 = 2;
-pub const STORE_FUEL_COST: u32 = 2;
-pub const CALL_FUEL_COST: u32 = 10;
+pub use rwasm_fuel_policy::{
+    BASE_FUEL_COST, CALL_FUEL_COST, ENTITY_FUEL_COST, LOAD_FUEL_COST, STORE_FUEL_COST,
+};
+use wasmparser::Operator;
 
 pub fn rwasm_fuel_for_operator(op: &Operator<'_>) -> u32 {
     use wasmparser::Operator::*;
@@ -64,6 +68,9 @@ pub fn rwasm_fuel_for_operator(op: &Operator<'_>) -> u32 {
     }
 }
 
+/// Operators the rwasm subset rejects at runtime; only consulted when float support is
+/// compiled out, which is the default build.
+#[cfg(not(feature = "full-wasm-mode"))]
 pub fn is_rwasm_operator_disabled(op: &Operator<'_>) -> bool {
     use wasmparser::Operator::*;
 
