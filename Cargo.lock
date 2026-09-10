@@ -4847,7 +4847,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-environ-rwasm"
-version = "45.0.0-rwasm.1"
+version = "45.0.0-rwasm.2"
 dependencies = [
  "anyhow",
  "arbitrary",
@@ -5013,7 +5013,7 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-cranelift-rwasm"
-version = "45.0.0-rwasm.1"
+version = "45.0.0-rwasm.2"
 dependencies = [
  "cfg-if",
  "cranelift-codegen",
@@ -5170,7 +5170,7 @@ version = "45.0.0"
 
 [[package]]
 name = "wasmtime-rwasm"
-version = "45.0.0-rwasm.1"
+version = "45.0.0-rwasm.2"
 dependencies = [
  "addr2line 0.26.1",
  "async-trait",

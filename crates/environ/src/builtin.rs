@@ -39,6 +39,10 @@ macro_rules! foreach_builtin_function {
             memory_atomic_wait64(vmctx: vmctx, memory: u32, addr: u64, expected: u64, timeout: u64) -> u64;
             // Invoked when fuel has run out while executing a function.
             out_of_gas(vmctx: vmctx) -> bool;
+            // Invoked by the rwasm fuel scheme when a region charge exceeds the injected fuel.
+            // `before` is the fuel counter from before the charge; it is restored when the
+            // charge is refused so that a failed charge is never applied.
+            rwasm_out_of_fuel(vmctx: vmctx, before: u64) -> bool;
             // Invoked when we reach a new epoch.
             #[cfg(target_has_atomic = "64")]
             new_epoch(vmctx: vmctx) -> u64;
