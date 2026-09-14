@@ -510,6 +510,7 @@ mod sync_nostd;
 use sync_nostd as sync;
 
 pub use wasmtime_environ::OperatorCost;
+pub use wasmtime_environ::RwasmBulkFuel;
 pub use wasmtime_environ::ToWasmtimeResult;
 #[doc(inline)]
 pub use wasmtime_environ::error;

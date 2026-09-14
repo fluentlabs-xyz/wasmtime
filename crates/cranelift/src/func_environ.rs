@@ -533,6 +533,172 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
         // `translate_loop_header`.
         self.fuel_region_charge(builder, rwasm_fuel::rwasm_fuel_for_operator(op));
         self.rwasm_eval_fuel_policy(op, builder);
+        if let Some(bulk_fuel) = self.compiler.rwasm_bulk_fuel {
+            self.rwasm_bulk_fuel(op, bulk_fuel, builder);
+        }
+    }
+
+    /// Charges a bulk memory or table operation by the amount of work it does, exactly as the
+    /// rwasm translator's `consume_fuel_for_bulk_ops` lowering does right before the operation
+    /// (`op_memory_fill_checked` and friends in rwasm's `src/isa/{memory,table}.rs`):
+    ///
+    /// * `memory.fill`/`copy`/`init`: `(n + 63) >> 6` fuel for `n` bytes,
+    /// * `memory.grow`: `(pages * 65536) >> 6`,
+    /// * `table.fill`/`copy`/`init`/`grow`: `(n + 15) >> 4` fuel for `n` elements,
+    ///
+    /// all in wrapping 32-bit arithmetic like the `i32` instructions rwasm emits. The two `init`
+    /// operations are charged only after rwasm's source-range guard (`s > len` or
+    /// `n > len - s` against the segment's original length traps first, uncharged), and the two
+    /// `grow` operations only when rwasm's limit guard does not short-circuit to `-1`.
+    fn rwasm_bulk_fuel(
+        &mut self,
+        op: &Operator<'_>,
+        bulk_fuel: wasmtime_environ::RwasmBulkFuel,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        use wasmtime_environ::{DataIndex, ElemIndex};
+
+        fn words(builder: &mut FunctionBuilder<'_>, n: ir::Value, add: i64, shift: i64) -> ir::Value {
+            let rounded = builder.ins().iadd_imm(n, Imm64::new(add));
+            let words = builder.ins().ushr_imm(rounded, Imm64::new(shift));
+            builder.ins().uextend(ir::types::I64, words)
+        }
+        const MEMORY: (i64, i64) = (63, 6);
+        const TABLE: (i64, i64) = (15, 4);
+
+        match op {
+            Operator::MemoryFill { .. } | Operator::MemoryCopy { .. } => {
+                let n = self.stacks.peekn(1)[0];
+                let fuel = words(builder, n, MEMORY.0, MEMORY.1);
+                self.fuel_charge(builder, fuel);
+            }
+            Operator::TableFill { .. } | Operator::TableCopy { .. } => {
+                let n = self.stacks.peekn(1)[0];
+                let fuel = words(builder, n, TABLE.0, TABLE.1);
+                self.fuel_charge(builder, fuel);
+            }
+            Operator::MemoryInit { data_index, .. } => {
+                let len = self.translation.rwasm_data_segment_lengths
+                    [DataIndex::from_u32(*data_index).as_u32() as usize];
+                self.rwasm_bulk_init_charge(builder, len, ir::TrapCode::HEAP_OUT_OF_BOUNDS, MEMORY);
+            }
+            Operator::TableInit { elem_index, .. } => {
+                let len = self.translation.rwasm_elem_segment_lengths
+                    [ElemIndex::from_u32(*elem_index).as_u32() as usize];
+                self.rwasm_bulk_init_charge(builder, len, crate::TRAP_TABLE_OUT_OF_BOUNDS, TABLE);
+            }
+            Operator::MemoryGrow { mem, .. } => {
+                // rwasm: `memory_size + n > max_pages` (signed, wrapping) short-circuits to `-1`
+                // without a charge, where `max_pages` is the declared maximum when it fits the
+                // compiler's limit and the compiler's limit otherwise
+                let memory_index = MemoryIndex::from_u32(*mem);
+                let max_pages = self.module.memories[memory_index]
+                    .limits
+                    .max
+                    .and_then(|max| u32::try_from(max).ok())
+                    .filter(|max| *max <= bulk_fuel.max_memory_pages)
+                    .unwrap_or(bulk_fuel.max_memory_pages);
+                let n = self.stacks.peekn(1)[0];
+                let size = self
+                    .translate_memory_size(builder.cursor(), memory_index)
+                    .expect("memory.size of a declared memory translates");
+                let size = if builder.func.dfg.value_type(size) == ir::types::I32 {
+                    size
+                } else {
+                    builder.ins().ireduce(ir::types::I32, size)
+                };
+                let sum = builder.ins().iadd(size, n);
+                let skip = builder.ins().icmp_imm(
+                    IntCC::SignedGreaterThan,
+                    sum,
+                    Imm64::new(i64::from(max_pages as i32)),
+                );
+                let bytes = builder.ins().imul_imm(n, Imm64::new(65536));
+                let fuel = builder.ins().ushr_imm(bytes, Imm64::new(6));
+                let fuel = builder.ins().uextend(ir::types::I64, fuel);
+                self.rwasm_bulk_charge_unless(builder, skip, fuel);
+            }
+            Operator::TableGrow { table } => {
+                // rwasm: `n > limit` or `n + table_size > limit` (unsigned) short-circuits to
+                // `-1` without a charge, `limit` being the declared maximum clamped to the
+                // runtime's table cap
+                let table_index = TableIndex::from_u32(*table);
+                let limit = self.module.tables[table_index]
+                    .limits
+                    .max
+                    .and_then(|max| u32::try_from(max).ok())
+                    .unwrap_or(bulk_fuel.max_table_elements)
+                    .min(bulk_fuel.max_table_elements);
+                let n = self.stacks.peekn(1)[0];
+                let size = self
+                    .translate_table_size(builder.cursor(), table_index)
+                    .expect("table.size of a declared table translates");
+                let size = if builder.func.dfg.value_type(size) == ir::types::I32 {
+                    size
+                } else {
+                    builder.ins().ireduce(ir::types::I32, size)
+                };
+                let limit_imm = Imm64::new(i64::from(limit));
+                let over = builder
+                    .ins()
+                    .icmp_imm(IntCC::UnsignedGreaterThan, n, limit_imm);
+                let sum = builder.ins().iadd(size, n);
+                let over_with_size = builder
+                    .ins()
+                    .icmp_imm(IntCC::UnsignedGreaterThan, sum, limit_imm);
+                let skip = builder.ins().bor(over, over_with_size);
+                let fuel = words(builder, n, TABLE.0, TABLE.1);
+                self.rwasm_bulk_charge_unless(builder, skip, fuel);
+            }
+            _ => {}
+        }
+    }
+
+    /// rwasm's guard for `memory.init`/`table.init`: `[d, s, n]` on the stack, trap (uncharged)
+    /// when `s > len` or `n > len - s`, then charge `n`.
+    fn rwasm_bulk_init_charge(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        len: u32,
+        trap: ir::TrapCode,
+        (add, shift): (i64, i64),
+    ) {
+        let operands = self.stacks.peekn(3);
+        let (s, n) = (operands[1], operands[2]);
+        let len_imm = Imm64::new(i64::from(len));
+        let s_over = builder.ins().icmp_imm(IntCC::UnsignedGreaterThan, s, len_imm);
+        self.trapnz(builder, s_over, trap);
+        let len_value = builder.ins().iconst(ir::types::I32, len_imm);
+        let remaining = builder.ins().isub(len_value, s);
+        let n_over = builder
+            .ins()
+            .icmp(IntCC::UnsignedLessThan, remaining, n);
+        self.trapnz(builder, n_over, trap);
+        let rounded = builder.ins().iadd_imm(n, Imm64::new(add));
+        let words = builder.ins().ushr_imm(rounded, Imm64::new(shift));
+        let fuel = builder.ins().uextend(ir::types::I64, words);
+        self.fuel_charge(builder, fuel);
+    }
+
+    /// Charges `fuel` unless `skip` is set, in a diamond so the counter stays a single SSA
+    /// variable on both paths.
+    fn rwasm_bulk_charge_unless(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        skip: ir::Value,
+        fuel: ir::Value,
+    ) {
+        let charge_block = builder.create_block();
+        let continuation_block = builder.create_block();
+        builder
+            .ins()
+            .brif(skip, continuation_block, &[], charge_block, &[]);
+        builder.seal_block(charge_block);
+        builder.switch_to_block(charge_block);
+        self.fuel_charge(builder, fuel);
+        builder.ins().jump(continuation_block, &[]);
+        builder.seal_block(continuation_block);
+        builder.switch_to_block(continuation_block);
     }
 
     /// Charges the syscall fuel configured for an imported function right before the call,

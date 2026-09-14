@@ -138,6 +138,9 @@ impl Engine {
                 compiler.set_syscall_fuel_params(syscall_fuel_params);
             }
         }
+        if let Some(compiler) = compiler.as_mut() {
+            compiler.set_rwasm_bulk_fuel(config.rwasm_bulk_fuel);
+        }
 
         #[cfg(feature = "runtime")]
         let empty_module_runtime_info = ModuleRuntimeInfo::bare(try_new(

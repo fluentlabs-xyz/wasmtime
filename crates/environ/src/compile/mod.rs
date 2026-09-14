@@ -467,6 +467,22 @@ pub trait Compiler: Send + Sync {
         >,
     ) {
     }
+
+    /// Charges bulk memory and table operations by the amount of work they do, the way the
+    /// rwasm translator does with `consume_fuel_for_bulk_ops`. `None` keeps the flat entity cost.
+    fn set_rwasm_bulk_fuel(&mut self, _bulk_fuel: Option<RwasmBulkFuel>) {}
+}
+
+/// The limits the rwasm translator bakes into its bulk-operation guards, needed to charge the
+/// same fuel: a `memory.grow` or `table.grow` that rwasm short-circuits to `-1` at its guard is
+/// not charged, and the guard compares against these limits (the smaller of the declared maximum
+/// and the limit).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RwasmBulkFuel {
+    /// `CompilationConfig::max_allowed_memory_pages` of the rwasm compiler.
+    pub max_memory_pages: u32,
+    /// `N_MAX_TABLE_SIZE` of the rwasm runtime.
+    pub max_table_elements: u32,
 }
 
 /// An inlining compiler.

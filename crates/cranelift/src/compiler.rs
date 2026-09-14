@@ -89,6 +89,7 @@ pub struct Compiler {
     pub(crate) wmemcheck: bool,
     pub(crate) syscall_fuel_params:
         HashMap<rwasm_fuel_policy::SyscallName, rwasm_fuel_policy::SyscallFuelParams>,
+    pub(crate) rwasm_bulk_fuel: Option<wasmtime_environ::RwasmBulkFuel>,
 }
 
 impl Drop for Compiler {
@@ -141,6 +142,7 @@ impl Compiler {
             #[cfg(feature = "wmemcheck")]
             wmemcheck,
             syscall_fuel_params: Default::default(),
+            rwasm_bulk_fuel: None,
         }
     }
 
@@ -238,6 +240,10 @@ impl wasmtime_environ::Compiler for Compiler {
         >,
     ) {
         self.syscall_fuel_params = syscall_fuel_params;
+    }
+
+    fn set_rwasm_bulk_fuel(&mut self, bulk_fuel: Option<wasmtime_environ::RwasmBulkFuel>) {
+        self.rwasm_bulk_fuel = bulk_fuel;
     }
 
     fn compile_function(
