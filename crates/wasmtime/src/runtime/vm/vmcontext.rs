@@ -1197,6 +1197,15 @@ pub struct VMStoreContext {
     /// This field is in use only if guest debugging is enabled.
     pub execution_version: u64,
 
+    /// The frames the rwasm VM would have on its call stack while the running function
+    /// executes. Maintained by compiled code when the engine enforces
+    /// [`wasmtime_environ::RwasmStackLimits`]; zero for the function the host called.
+    pub rwasm_call_depth: UnsafeCell<u32>,
+
+    /// The value-stack slots the rwasm VM would have below the running function's parameters.
+    /// Maintained like `rwasm_call_depth`.
+    pub rwasm_stack_slots: UnsafeCell<u32>,
+
     /// Current stack limit of the wasm module.
     ///
     /// For more information see `crates/cranelift/src/lib.rs`.
@@ -1363,6 +1372,8 @@ impl Default for VMStoreContext {
             fuel_consumed: UnsafeCell::new(0),
             epoch_deadline: UnsafeCell::new(0),
             execution_version: 0,
+            rwasm_call_depth: UnsafeCell::new(0),
+            rwasm_stack_slots: UnsafeCell::new(0),
             stack_limit: UnsafeCell::new(usize::max_value()),
             gc_heap: VMMemoryDefinition {
                 base: NonNull::dangling().into(),
@@ -1406,6 +1417,14 @@ mod test_vmstore_context {
         assert_eq!(
             offset_of!(VMStoreContext, execution_version),
             usize::from(offsets.ptr.vmstore_context_execution_version())
+        );
+        assert_eq!(
+            offset_of!(VMStoreContext, rwasm_call_depth),
+            usize::from(offsets.ptr.vmstore_context_rwasm_call_depth())
+        );
+        assert_eq!(
+            offset_of!(VMStoreContext, rwasm_stack_slots),
+            usize::from(offsets.ptr.vmstore_context_rwasm_stack_slots())
         );
         assert_eq!(
             offset_of!(VMStoreContext, gc_heap),

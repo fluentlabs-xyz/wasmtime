@@ -31,6 +31,7 @@ use std::ops::Range;
 use std::path;
 use std::sync::{Arc, Mutex};
 use wasmparser::{FuncValidatorAllocations, FunctionBody};
+use wasmtime_environ::TypeConvert as _;
 use wasmtime_environ::error::{Context as _, Result};
 use wasmtime_environ::obj::{ELF_WASMTIME_EXCEPTIONS, ELF_WASMTIME_FRAMES};
 use wasmtime_environ::{
@@ -90,6 +91,17 @@ pub struct Compiler {
     pub(crate) syscall_fuel_params:
         HashMap<rwasm_fuel_policy::SyscallName, rwasm_fuel_policy::SyscallFuelParams>,
     pub(crate) rwasm_bulk_fuel: Option<wasmtime_environ::RwasmBulkFuel>,
+    pub(crate) rwasm_stack_limits: Option<wasmtime_environ::RwasmStackLimits>,
+}
+
+/// The 32-bit value-stack slots a value of `ty` takes on the rwasm VM.
+pub(crate) fn rwasm_value_slots(ty: wasmtime_environ::WasmValType) -> u32 {
+    use wasmtime_environ::WasmValType::*;
+    match ty {
+        I32 | F32 | Ref(_) => 1,
+        I64 | F64 => 2,
+        V128 => 4,
+    }
 }
 
 impl Drop for Compiler {
@@ -143,6 +155,7 @@ impl Compiler {
             wmemcheck,
             syscall_fuel_params: Default::default(),
             rwasm_bulk_fuel: None,
+            rwasm_stack_limits: None,
         }
     }
 
@@ -246,6 +259,10 @@ impl wasmtime_environ::Compiler for Compiler {
         self.rwasm_bulk_fuel = bulk_fuel;
     }
 
+    fn set_rwasm_stack_limits(&mut self, limits: Option<wasmtime_environ::RwasmStackLimits>) {
+        self.rwasm_stack_limits = limits;
+    }
+
     fn compile_function(
         &self,
         translation: &ModuleTranslation<'_>,
@@ -280,6 +297,35 @@ impl wasmtime_environ::Compiler for Compiler {
         }
 
         let mut func_env = FuncEnvironment::new(self, translation, types, wasm_func_ty, key);
+
+        if let Some(limits) = self.rwasm_stack_limits {
+            // The frame the rwasm VM lays out for this function: its parameters, its locals and
+            // the height its translator recorded. `i64`/`f64` values take two 32-bit slots.
+            let frame_height = translation
+                .rwasm_frame_height(func_index)
+                .map_err(CompileError::Codegen)?;
+            let params_slots = wasm_func_ty
+                .params()
+                .iter()
+                .map(|ty| rwasm_value_slots(*ty))
+                .fold(0u32, u32::saturating_add);
+            let mut locals = input
+                .body
+                .get_locals_reader()
+                .map_err(|e| CompileError::Codegen(e.to_string()))?;
+            let mut locals_slots = 0u32;
+            for _ in 0..locals.get_count() {
+                let (count, ty) = locals
+                    .read()
+                    .map_err(|e| CompileError::Codegen(e.to_string()))?;
+                let ty = func_env
+                    .convert_valtype(ty)
+                    .map_err(|e| CompileError::Codegen(e.to_string()))?;
+                locals_slots =
+                    locals_slots.saturating_add(count.saturating_mul(rwasm_value_slots(ty)));
+            }
+            func_env.set_rwasm_frame(limits, params_slots, locals_slots, frame_height);
+        }
 
         // The `stack_limit` global value below is the implementation of stack
         // overflow checks in Wasmtime.

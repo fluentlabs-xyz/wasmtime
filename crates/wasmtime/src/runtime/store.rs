@@ -116,6 +116,7 @@ use core::pin::Pin;
 use core::ptr::NonNull;
 #[cfg(any(feature = "async", feature = "gc"))]
 use core::task::Poll;
+use wasmtime_environ::RwasmStackCounters;
 use wasmtime_environ::{DefinedGlobalIndex, DefinedTableIndex, EntityRef, TripleExt};
 
 mod context;
@@ -1048,6 +1049,22 @@ impl<T> Store<T> {
         self.inner.get_fuel()
     }
 
+    /// Returns the rwasm stack counters of this [`Store`]: the call depth and the frame base
+    /// compiled code maintains when the engine enforces
+    /// [`RwasmStackLimits`](crate::RwasmStackLimits).
+    pub fn rwasm_stack_counters(&self) -> RwasmStackCounters {
+        self.inner.rwasm_stack_counters()
+    }
+
+    /// Sets the rwasm stack counters of this [`Store`].
+    ///
+    /// The counters describe the frame the host is about to call into: zero frames and zero
+    /// slots for a function the rwasm VM would run as the outermost frame. They are only
+    /// consulted when the engine enforces [`RwasmStackLimits`](crate::RwasmStackLimits).
+    pub fn set_rwasm_stack_counters(&mut self, counters: RwasmStackCounters) {
+        self.inner.set_rwasm_stack_counters(counters)
+    }
+
     /// Set the fuel to this [`Store`] for wasm to consume while executing.
     ///
     /// For this method to work fuel consumption must be enabled via
@@ -1381,6 +1398,13 @@ impl<'a, T> StoreContext<'a, T> {
     pub fn get_fuel(&self) -> Result<u64> {
         self.0.get_fuel()
     }
+
+    /// Returns the rwasm stack counters of this store.
+    ///
+    /// For more information see [`Store::rwasm_stack_counters`].
+    pub fn rwasm_stack_counters(&self) -> RwasmStackCounters {
+        self.0.rwasm_stack_counters()
+    }
 }
 
 impl<'a, T> StoreContextMut<'a, T> {
@@ -1430,6 +1454,20 @@ impl<'a, T> StoreContextMut<'a, T> {
     /// For more information see [`Store::set_fuel`]
     pub fn set_fuel(&mut self, fuel: u64) -> Result<()> {
         self.0.set_fuel(fuel)
+    }
+
+    /// Returns the rwasm stack counters of this store.
+    ///
+    /// For more information see [`Store::rwasm_stack_counters`].
+    pub fn rwasm_stack_counters(&self) -> RwasmStackCounters {
+        self.0.rwasm_stack_counters()
+    }
+
+    /// Sets the rwasm stack counters of this store.
+    ///
+    /// For more information see [`Store::set_rwasm_stack_counters`].
+    pub fn set_rwasm_stack_counters(&mut self, counters: RwasmStackCounters) {
+        self.0.set_rwasm_stack_counters(counters)
     }
 
     /// Configures this `Store` to periodically yield while executing futures.
@@ -2406,6 +2444,25 @@ impl StoreOpaque {
         );
         let injected_fuel = unsafe { *self.vm_store_context.fuel_consumed.get() };
         Ok(get_fuel(injected_fuel, self.fuel_reserve))
+    }
+
+    pub fn rwasm_stack_counters(&self) -> RwasmStackCounters {
+        // SAFETY: like `fuel_consumed`, the cells are written by compiled code only while it
+        // runs, and this store is not running compiled code while the host holds it.
+        unsafe {
+            RwasmStackCounters {
+                call_depth: *self.vm_store_context.rwasm_call_depth.get(),
+                stack_slots: *self.vm_store_context.rwasm_stack_slots.get(),
+            }
+        }
+    }
+
+    pub fn set_rwasm_stack_counters(&mut self, counters: RwasmStackCounters) {
+        // SAFETY: see `rwasm_stack_counters`.
+        unsafe {
+            *self.vm_store_context.rwasm_call_depth.get() = counters.call_depth;
+            *self.vm_store_context.rwasm_stack_slots.get() = counters.stack_slots;
+        }
     }
 
     pub(crate) fn refuel(&mut self) -> bool {

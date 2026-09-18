@@ -471,6 +471,11 @@ pub trait Compiler: Send + Sync {
     /// Charges bulk memory and table operations by the amount of work they do, the way the
     /// rwasm translator does with `consume_fuel_for_bulk_ops`. `None` keeps the flat entity cost.
     fn set_rwasm_bulk_fuel(&mut self, _bulk_fuel: Option<RwasmBulkFuel>) {}
+
+    /// Emulates the stack limits of the rwasm VM in compiled code, so that a call chain
+    /// traps `StackOverflow` exactly where the rwasm VM stops it. `None` leaves only the
+    /// native stack limit.
+    fn set_rwasm_stack_limits(&mut self, _limits: Option<crate::RwasmStackLimits>) {}
 }
 
 /// The limits the rwasm translator bakes into its bulk-operation guards, needed to charge the

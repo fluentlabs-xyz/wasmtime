@@ -204,6 +204,7 @@ pub struct Config {
     pub(crate) syscall_fuel_params:
         Option<HashMap<rwasm_fuel_policy::SyscallName, rwasm_fuel_policy::SyscallFuelParams>>,
     pub(crate) rwasm_bulk_fuel: Option<wasmtime_environ::RwasmBulkFuel>,
+    pub(crate) rwasm_stack_limits: Option<wasmtime_environ::RwasmStackLimits>,
 }
 
 /// User-provided configuration for the compiler.
@@ -316,6 +317,7 @@ impl Config {
             rr_config: RRConfig::None,
             syscall_fuel_params: None,
             rwasm_bulk_fuel: None,
+            rwasm_stack_limits: None,
         };
         ret.wasm_backtrace_details(WasmBacktraceDetails::Environment);
         ret
@@ -654,6 +656,22 @@ impl Config {
         bulk_fuel: Option<wasmtime_environ::RwasmBulkFuel>,
     ) -> &mut Self {
         self.rwasm_bulk_fuel = bulk_fuel;
+        self
+    }
+
+    /// Emulates the stack limits of the rwasm VM in compiled code, so that a call chain traps
+    /// `StackOverflow` exactly where the rwasm VM stops it: at
+    /// [`RwasmStackLimits::max_call_depth`](wasmtime_environ::RwasmStackLimits) frames, or when
+    /// the frames on the chain exceed its value-stack window. Every module compiled on the
+    /// engine must then carry the frame heights the rwasm compiler recorded
+    /// ([`RWASM_FRAMES_SECTION`](wasmtime_environ::RWASM_FRAMES_SECTION)), and the embedder
+    /// resets [`Store::set_rwasm_stack_counters`](crate::Store::set_rwasm_stack_counters) before
+    /// every call into the guest.
+    pub fn rwasm_stack_limits(
+        &mut self,
+        limits: Option<wasmtime_environ::RwasmStackLimits>,
+    ) -> &mut Self {
+        self.rwasm_stack_limits = limits;
         self
     }
 
