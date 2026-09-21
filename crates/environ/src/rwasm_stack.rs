@@ -21,8 +21,8 @@ pub const RWASM_FRAMES_SECTION: &str = "rwasm.frames";
 ///
 /// * a call site traps `StackOverflow` when the call stack is full, then publishes the callee's
 ///   depth and frame base (the caller's base plus its parameters, locals and the operands below
-///   the arguments) and restores its own after the call; tail calls keep both counters, like
-///   `ReturnCallInternal` on rwasm;
+///   the arguments) with one store; the caller keeps its own in a register, so nothing is
+///   restored after the call. Tail calls keep both counters, like `ReturnCallInternal` on rwasm;
 /// * a function prologue traps `StackOverflow` when its frame base plus its parameters and its
 ///   recorded height ([`RWASM_FRAMES_SECTION`]) exceed the window, like rwasm's `StackCheck`;
 /// * with `code_snippets`, the `i64` operators that rwasm runs in a hidden snippet frame
@@ -43,6 +43,11 @@ pub struct RwasmStackLimits {
 }
 
 /// The rwasm stack counters of a store; see [`RwasmStackLimits`].
+///
+/// Compiled code keeps them packed in one `u64` (`call_depth` in the high half, `stack_slots`
+/// in the low half), so a call site publishes both with one store and a depth check is one
+/// compare of the whole word: neither half ever carries into the other, as both stay below
+/// their limits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RwasmStackCounters {
     /// Frames on the rwasm call stack while the running function executes: zero for the
@@ -51,6 +56,21 @@ pub struct RwasmStackCounters {
     /// Value-stack slots below the running function's parameters: zero for the function the
     /// host called.
     pub stack_slots: u32,
+}
+
+impl RwasmStackCounters {
+    /// The packed form compiled code keeps in the store.
+    pub fn pack(self) -> u64 {
+        (u64::from(self.call_depth) << 32) | u64::from(self.stack_slots)
+    }
+
+    /// Splits the packed form compiled code keeps in the store.
+    pub fn unpack(packed: u64) -> Self {
+        Self {
+            call_depth: (packed >> 32) as u32,
+            stack_slots: packed as u32,
+        }
+    }
 }
 
 /// The frame the rwasm compiler hides behind a single `i64` operator when `code_snippets` is on.

@@ -2449,19 +2449,13 @@ impl StoreOpaque {
     pub fn rwasm_stack_counters(&self) -> RwasmStackCounters {
         // SAFETY: like `fuel_consumed`, the cells are written by compiled code only while it
         // runs, and this store is not running compiled code while the host holds it.
-        unsafe {
-            RwasmStackCounters {
-                call_depth: *self.vm_store_context.rwasm_call_depth.get(),
-                stack_slots: *self.vm_store_context.rwasm_stack_slots.get(),
-            }
-        }
+        unsafe { RwasmStackCounters::unpack(*self.vm_store_context.rwasm_stack.get()) }
     }
 
     pub fn set_rwasm_stack_counters(&mut self, counters: RwasmStackCounters) {
         // SAFETY: see `rwasm_stack_counters`.
         unsafe {
-            *self.vm_store_context.rwasm_call_depth.get() = counters.call_depth;
-            *self.vm_store_context.rwasm_stack_slots.get() = counters.stack_slots;
+            *self.vm_store_context.rwasm_stack.get() = counters.pack();
         }
     }
 
