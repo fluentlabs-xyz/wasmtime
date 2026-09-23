@@ -29,7 +29,13 @@ pub const RWASM_FRAMES_SECTION: &str = "rwasm.frames";
 ///   ([`rwasm_snippet_frames`]) check the depth and the slots of that frame;
 /// * host functions are checked by the embedder, whose import trampoline has its own frame on
 ///   rwasm.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// The setting changes the generated code, so it is part of the engine's compatibility hash
+/// (the cache key and `Engine::precompile_compatibility_hash`) and of a precompiled artifact's
+/// metadata.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde_derive::Serialize, serde_derive::Deserialize,
+)]
 pub struct RwasmStackLimits {
     /// `N_MAX_RECURSION_DEPTH` of the rwasm runtime: a call traps once this many frames are on
     /// the call stack.

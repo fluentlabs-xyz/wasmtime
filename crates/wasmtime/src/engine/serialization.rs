@@ -34,7 +34,9 @@ use object::{
     read::elf::{ElfFile64, FileHeader, SectionHeader},
 };
 use serde_derive::{Deserialize, Serialize};
-use wasmtime_environ::{FlagValue, ObjectKind, OperatorCostStrategy, RwasmBulkFuel, Tunables, obj};
+use wasmtime_environ::{
+    FlagValue, ObjectKind, OperatorCostStrategy, RwasmBulkFuel, RwasmStackLimits, Tunables, obj,
+};
 
 const VERSION: u8 = 0;
 
@@ -188,6 +190,8 @@ pub struct Metadata<'a> {
     features: u64,
     /// `Config::rwasm_bulk_fuel`, which the fork keeps on the config instead of in the tunables.
     rwasm_bulk_fuel: Option<RwasmBulkFuel>,
+    /// `Config::rwasm_stack_limits`, likewise.
+    rwasm_stack_limits: Option<RwasmStackLimits>,
 }
 
 impl Metadata<'_> {
@@ -201,6 +205,7 @@ impl Metadata<'_> {
             tunables: engine.tunables().clone(),
             features: engine.features().bits(),
             rwasm_bulk_fuel: engine.config().rwasm_bulk_fuel,
+            rwasm_stack_limits: engine.config().rwasm_stack_limits,
         })
     }
 
@@ -214,6 +219,11 @@ impl Metadata<'_> {
             &self.rwasm_bulk_fuel,
             &engine.config().rwasm_bulk_fuel,
             "rwasm bulk fuel",
+        )?;
+        Self::check_rwasm_option(
+            &self.rwasm_stack_limits,
+            &engine.config().rwasm_stack_limits,
+            "rwasm stack limits",
         )?;
         Ok(())
     }
@@ -970,6 +980,135 @@ mod test {
                         "an artifact compiled under {compiled:?} loaded into an engine with {host:?}"
                     ));
                     assert_contains(&err, "rwasm bulk fuel");
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// A module whose code differs under `Config::rwasm_stack_limits`, carrying the frame
+    /// height the rwasm compiler records for each function (one little-endian `u32` per
+    /// function), which a stack-limited engine requires.
+    const STACK_RECURSE: &str = r#"(module
+        (func $recurse (export "recurse") (param i32)
+            (if (local.get 0)
+                (then (call $recurse (i32.sub (local.get 0) (i32.const 1))))))
+        (@custom "rwasm.frames" (after last) "\02\00\00\00"))"#;
+
+    fn rwasm_stack_limits(
+        max_call_depth: u32,
+        max_stack_slots: u32,
+        code_snippets: bool,
+    ) -> Option<RwasmStackLimits> {
+        Some(RwasmStackLimits {
+            max_call_depth,
+            max_stack_slots,
+            code_snippets,
+        })
+    }
+
+    fn rwasm_stack_limits_config(limits: Option<RwasmStackLimits>) -> Config {
+        let mut cfg = Config::new();
+        cfg.rwasm_stack_limits(limits);
+        cfg
+    }
+
+    /// Builds without the stack checks and under other limits differ in code, so they must not
+    /// share a compatibility key; equal settings must.
+    #[test]
+    fn precompile_compatibility_key_accounts_for_rwasm_stack_limits() {
+        fn hash_for(limits: Option<RwasmStackLimits>) -> u64 {
+            let engine = Engine::new(&rwasm_stack_limits_config(limits)).expect("valid config");
+            let mut hasher = DefaultHasher::new();
+            engine.precompile_compatibility_hash().hash(&mut hasher);
+            hasher.finish()
+        }
+        let unlimited = hash_for(None);
+        let limited = hash_for(rwasm_stack_limits(1024, 8200, true));
+        assert_ne!(unlimited, limited);
+        assert_ne!(limited, hash_for(rwasm_stack_limits(512, 8200, true)));
+        assert_ne!(limited, hash_for(rwasm_stack_limits(1024, 4100, true)));
+        assert_ne!(limited, hash_for(rwasm_stack_limits(1024, 8200, false)));
+        assert_eq!(limited, hash_for(rwasm_stack_limits(1024, 8200, true)));
+    }
+
+    /// The on-disk cache is keyed by the same hash: an artifact compiled under one stack setting
+    /// is never served to an engine with another, and is reused under its own.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn cache_accounts_for_rwasm_stack_limits() -> Result<()> {
+        let td = TempDir::new()?;
+        let config_path = td.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            &format!(
+                "
+                    [cache]
+                    directory = '{}'
+                ",
+                td.path().join("cache").display()
+            ),
+        )?;
+        for limits in [
+            None,
+            rwasm_stack_limits(1024, 8200, true),
+            rwasm_stack_limits(512, 8200, true),
+            rwasm_stack_limits(1024, 4100, true),
+            rwasm_stack_limits(1024, 8200, false),
+        ] {
+            let mut cfg = rwasm_stack_limits_config(limits);
+            cfg.cache(Some(Cache::from_file(Some(&config_path))?));
+            let engine = Engine::new(&cfg)?;
+            let cache_config = engine
+                .config()
+                .cache
+                .as_ref()
+                .expect("Missing cache config");
+            Module::new(&engine, STACK_RECURSE)?;
+            assert_eq!(
+                (cache_config.cache_hits(), cache_config.cache_misses()),
+                (0, 1),
+                "{limits:?} was served an artifact compiled under another stack setting"
+            );
+            Module::new(&engine, STACK_RECURSE)?;
+            assert_eq!(
+                (cache_config.cache_hits(), cache_config.cache_misses()),
+                (1, 1),
+                "{limits:?} did not reuse its own artifact"
+            );
+        }
+
+        Ok(())
+    }
+
+    /// A precompiled artifact loads only into an engine with the stack setting it was compiled
+    /// under, including a build without the stack checks offered to an engine that enforces
+    /// them; an engine configured the same way, not the same engine, is enough.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn precompiled_module_requires_the_same_rwasm_stack_limits() -> Result<()> {
+        let settings = [
+            None,
+            rwasm_stack_limits(1024, 8200, true),
+            rwasm_stack_limits(512, 8200, true),
+            rwasm_stack_limits(1024, 4100, true),
+            rwasm_stack_limits(1024, 8200, false),
+        ];
+        for compiled in settings {
+            let artifact = Engine::new(&rwasm_stack_limits_config(compiled))?
+                .precompile_module(STACK_RECURSE.as_bytes())?;
+            for host in settings {
+                let engine = Engine::new(&rwasm_stack_limits_config(host))?;
+                // SAFETY: the artifact was produced by `precompile_module` in this process.
+                let loaded = unsafe { Module::deserialize(&engine, &artifact) };
+                if compiled == host {
+                    loaded?;
+                } else {
+                    let err = loaded.map(|_| ()).expect_err(&format!(
+                        "an artifact compiled under {compiled:?} loaded into an engine with {host:?}"
+                    ));
+                    assert_contains(&err, "rwasm stack limits");
                 }
             }
         }

@@ -667,6 +667,10 @@ impl Config {
     /// ([`RWASM_FRAMES_SECTION`](wasmtime_environ::RWASM_FRAMES_SECTION)), and the embedder
     /// resets [`Store::set_rwasm_stack_counters`](crate::Store::set_rwasm_stack_counters) before
     /// every call into the guest.
+    ///
+    /// The setting is part of the engine's compatibility hash, so cached code is only reused
+    /// under the same setting, and precompiled artifacts load only into an engine configured
+    /// with the same setting.
     pub fn rwasm_stack_limits(
         &mut self,
         limits: Option<wasmtime_environ::RwasmStackLimits>,

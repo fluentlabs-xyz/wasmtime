@@ -821,8 +821,10 @@ impl std::hash::Hash for HashedEngineCompileEnv<'_> {
         config.wmemcheck.hash(hasher);
         // The rwasm codegen options live on the config instead of in the tunables but change
         // the generated code all the same: an artifact compiled without bulk-operation metering
-        // must never be served to an engine that meters it, or the other way around.
+        // or without the rwasm stack checks must never be served to an engine that enforces
+        // them, or the other way around.
         config.rwasm_bulk_fuel.hash(hasher);
+        config.rwasm_stack_limits.hash(hasher);
 
         // Catch accidental bugs of reusing across crate versions.
         config.module_version.hash(hasher);
