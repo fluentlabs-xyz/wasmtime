@@ -34,7 +34,7 @@ use object::{
     read::elf::{ElfFile64, FileHeader, SectionHeader},
 };
 use serde_derive::{Deserialize, Serialize};
-use wasmtime_environ::{FlagValue, ObjectKind, OperatorCostStrategy, Tunables, obj};
+use wasmtime_environ::{FlagValue, ObjectKind, OperatorCostStrategy, RwasmBulkFuel, Tunables, obj};
 
 const VERSION: u8 = 0;
 
@@ -186,6 +186,8 @@ pub struct Metadata<'a> {
     isa_flags: TryVec<(&'a str, FlagValue<'a>)>,
     tunables: Tunables,
     features: u64,
+    /// `Config::rwasm_bulk_fuel`, which the fork keeps on the config instead of in the tunables.
+    rwasm_bulk_fuel: Option<RwasmBulkFuel>,
 }
 
 impl Metadata<'_> {
@@ -198,6 +200,7 @@ impl Metadata<'_> {
             isa_flags: compiler.isa_flags().into(),
             tunables: engine.tunables().clone(),
             features: engine.features().bits(),
+            rwasm_bulk_fuel: engine.config().rwasm_bulk_fuel,
         })
     }
 
@@ -207,6 +210,11 @@ impl Metadata<'_> {
         self.check_isa_flags(engine)?;
         self.check_tunables(&engine.tunables())?;
         self.check_features(&engine.features())?;
+        Self::check_rwasm_option(
+            &self.rwasm_bulk_fuel,
+            &engine.config().rwasm_bulk_fuel,
+            "rwasm bulk fuel",
+        )?;
         Ok(())
     }
 
@@ -272,6 +280,25 @@ impl Metadata<'_> {
             if found { "with" } else { "without" },
             feature,
             if expected { "is" } else { "is not" }
+        );
+    }
+
+    /// Compares a codegen option the fork keeps on `Config` instead of in `Tunables`.
+    ///
+    /// These options change the generated code, and the artifact's version string carries only
+    /// the major version (`ModuleVersionStrategy::as_str`), so this check is what keeps an
+    /// artifact compiled under another setting from loading.
+    fn check_rwasm_option<T: PartialEq + fmt::Debug>(
+        found: &Option<T>,
+        expected: &Option<T>,
+        option: &str,
+    ) -> Result<()> {
+        if found == expected {
+            return Ok(());
+        }
+
+        bail!(
+            "Module was compiled with {option} {found:?} but {expected:?} is expected for the host"
         );
     }
 
@@ -824,6 +851,128 @@ mod test {
         assert_ne!(custom_version_hash, default_version_hash);
         assert_ne!(custom_version_hash, none_version_hash);
         assert_ne!(default_version_hash, none_version_hash);
+
+        Ok(())
+    }
+
+    /// A module whose code differs under `Config::rwasm_bulk_fuel`.
+    const BULK_FILL: &str = r#"(module
+        (memory 1)
+        (func (export "fill")
+            (memory.fill (i32.const 0) (i32.const 0) (i32.const 65536))))"#;
+
+    fn rwasm_bulk_fuel(max_memory_pages: u32, max_table_elements: u32) -> Option<RwasmBulkFuel> {
+        Some(RwasmBulkFuel {
+            max_memory_pages,
+            max_table_elements,
+        })
+    }
+
+    /// The fuel-metered configuration an rwasm embedder runs, differing only in the bulk
+    /// setting.
+    fn rwasm_bulk_fuel_config(bulk_fuel: Option<RwasmBulkFuel>) -> Config {
+        let mut cfg = Config::new();
+        cfg.consume_fuel(true).rwasm_bulk_fuel(bulk_fuel);
+        cfg
+    }
+
+    /// Unmetered, metered and metered-under-other-limits builds differ in code, so they must
+    /// not share a compatibility key; equal settings must.
+    #[test]
+    fn precompile_compatibility_key_accounts_for_rwasm_bulk_fuel() {
+        fn hash_for(bulk_fuel: Option<RwasmBulkFuel>) -> u64 {
+            let engine = Engine::new(&rwasm_bulk_fuel_config(bulk_fuel)).expect("valid config");
+            let mut hasher = DefaultHasher::new();
+            engine.precompile_compatibility_hash().hash(&mut hasher);
+            hasher.finish()
+        }
+        let unmetered = hash_for(None);
+        let metered = hash_for(rwasm_bulk_fuel(512, 1024));
+        let other_memory_limit = hash_for(rwasm_bulk_fuel(1024, 1024));
+        let other_table_limit = hash_for(rwasm_bulk_fuel(512, 2048));
+        assert_ne!(unmetered, metered);
+        assert_ne!(metered, other_memory_limit);
+        assert_ne!(metered, other_table_limit);
+        assert_eq!(metered, hash_for(rwasm_bulk_fuel(512, 1024)));
+    }
+
+    /// The on-disk cache is keyed by the same hash: an artifact compiled under one bulk setting
+    /// is never served to an engine with another, and is reused under its own.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn cache_accounts_for_rwasm_bulk_fuel() -> Result<()> {
+        let td = TempDir::new()?;
+        let config_path = td.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            &format!(
+                "
+                    [cache]
+                    directory = '{}'
+                ",
+                td.path().join("cache").display()
+            ),
+        )?;
+        for bulk_fuel in [
+            None,
+            rwasm_bulk_fuel(512, 1024),
+            rwasm_bulk_fuel(1024, 1024),
+            rwasm_bulk_fuel(512, 2048),
+        ] {
+            let mut cfg = rwasm_bulk_fuel_config(bulk_fuel);
+            cfg.cache(Some(Cache::from_file(Some(&config_path))?));
+            let engine = Engine::new(&cfg)?;
+            let cache_config = engine
+                .config()
+                .cache
+                .as_ref()
+                .expect("Missing cache config");
+            Module::new(&engine, BULK_FILL)?;
+            assert_eq!(
+                (cache_config.cache_hits(), cache_config.cache_misses()),
+                (0, 1),
+                "{bulk_fuel:?} was served an artifact compiled under another bulk setting"
+            );
+            Module::new(&engine, BULK_FILL)?;
+            assert_eq!(
+                (cache_config.cache_hits(), cache_config.cache_misses()),
+                (1, 1),
+                "{bulk_fuel:?} did not reuse its own artifact"
+            );
+        }
+
+        Ok(())
+    }
+
+    /// A precompiled artifact loads only into an engine with the bulk setting it was compiled
+    /// under, including an unmetered build offered to a metering engine; an engine configured
+    /// the same way, not the same engine, is enough.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn precompiled_module_requires_the_same_rwasm_bulk_fuel() -> Result<()> {
+        let settings = [
+            None,
+            rwasm_bulk_fuel(512, 1024),
+            rwasm_bulk_fuel(1024, 1024),
+            rwasm_bulk_fuel(512, 2048),
+        ];
+        for compiled in settings {
+            let artifact = Engine::new(&rwasm_bulk_fuel_config(compiled))?
+                .precompile_module(BULK_FILL.as_bytes())?;
+            for host in settings {
+                let engine = Engine::new(&rwasm_bulk_fuel_config(host))?;
+                // SAFETY: the artifact was produced by `precompile_module` in this process.
+                let loaded = unsafe { Module::deserialize(&engine, &artifact) };
+                if compiled == host {
+                    loaded?;
+                } else {
+                    let err = loaded.map(|_| ()).expect_err(&format!(
+                        "an artifact compiled under {compiled:?} loaded into an engine with {host:?}"
+                    ));
+                    assert_contains(&err, "rwasm bulk fuel");
+                }
+            }
+        }
 
         Ok(())
     }

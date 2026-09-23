@@ -203,6 +203,7 @@ pub struct Config {
     pub(crate) rr_config: RRConfig,
     pub(crate) syscall_fuel_params:
         Option<HashMap<rwasm_fuel_policy::SyscallName, rwasm_fuel_policy::SyscallFuelParams>>,
+    pub(crate) rwasm_bulk_fuel: Option<wasmtime_environ::RwasmBulkFuel>,
 }
 
 /// User-provided configuration for the compiler.
@@ -314,6 +315,7 @@ impl Config {
             shared_memory: false,
             rr_config: RRConfig::None,
             syscall_fuel_params: None,
+            rwasm_bulk_fuel: None,
         };
         ret.wasm_backtrace_details(WasmBacktraceDetails::Environment);
         ret
@@ -635,6 +637,23 @@ impl Config {
         >,
     ) -> &mut Self {
         self.syscall_fuel_params = Some(syscall_fuel_params);
+        self
+    }
+
+    /// Charges bulk memory and table operations (`memory.fill`/`copy`/`init`/`grow`,
+    /// `table.fill`/`copy`/`init`/`grow`) by the amount of work they do, with the formulas and
+    /// guards of the rwasm translator's `consume_fuel_for_bulk_ops`, so a module burns the same
+    /// fuel on both engines under that option. Without it every bulk operation costs a flat
+    /// entity cost, which a guest can turn into gigabytes of `memset` per fuel unit.
+    ///
+    /// The setting is part of the engine's compatibility hash, so cached code is only reused
+    /// under the same setting, and precompiled artifacts load only into an engine configured
+    /// with the same setting.
+    pub fn rwasm_bulk_fuel(
+        &mut self,
+        bulk_fuel: Option<wasmtime_environ::RwasmBulkFuel>,
+    ) -> &mut Self {
+        self.rwasm_bulk_fuel = bulk_fuel;
         self
     }
 

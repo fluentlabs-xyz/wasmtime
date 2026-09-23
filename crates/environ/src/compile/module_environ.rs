@@ -109,6 +109,15 @@ pub struct ModuleTranslation<'data> {
     /// Total size of all passive data pushed into `passive_data` so far.
     total_passive_data: u32,
 
+    /// Length in bytes of every data segment, active or passive, by its index in the data
+    /// section. The rwasm translator bounds `memory.init` against the segment's original length
+    /// before charging its fuel; the Wasmtime backend has to run the same guard.
+    pub rwasm_data_segment_lengths: Vec<u32>,
+
+    /// Element count of every element segment by its index in the element section; a declared
+    /// segment counts as empty, as it does for rwasm.
+    pub rwasm_elem_segment_lengths: Vec<u32>,
+
     /// When we're parsing the code section this will be incremented so we know
     /// which function is currently being defined.
     code_index: u32,
@@ -135,6 +144,8 @@ impl<'data> ModuleTranslation<'data> {
             total_data: 0,
             passive_data: Vec::default(),
             total_passive_data: 0,
+            rwasm_data_segment_lengths: Vec::default(),
+            rwasm_elem_segment_lengths: Vec::default(),
             code_index: 0,
             types: None,
         }
@@ -520,6 +531,14 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                     // possible to create anything other than a `ref.null
                     // extern` for externref segments, so those just get
                     // translated to the reserved value of `FuncIndex`.
+                    let elements = match &kind {
+                        ElementKind::Declared => 0,
+                        _ => match &items {
+                            ElementItems::Functions(funcs) => funcs.count(),
+                            ElementItems::Expressions(_, items) => items.count(),
+                        },
+                    };
+                    self.result.rwasm_elem_segment_lengths.push(elements);
                     let elements = match items {
                         ElementItems::Functions(funcs) => {
                             let mut elems =
@@ -645,6 +664,13 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                         data,
                         range: _,
                     } = entry?;
+                    self.result.rwasm_data_segment_lengths.push(
+                        u32::try_from(data.len()).map_err(|_| {
+                            WasmError::Unsupported(format!(
+                                "more than 4 gigabytes of data in wasm module",
+                            ))
+                        })?,
+                    );
                     let mk_range = |total: &mut u32| -> Result<_, WasmError> {
                         let range = u32::try_from(data.len())
                             .ok()
