@@ -515,6 +515,10 @@ pub use wasmtime_environ::ToWasmtimeResult;
 #[doc(inline)]
 pub use wasmtime_environ::error;
 pub use wasmtime_environ::{FuncIndex, StaticModuleIndex};
+pub use wasmtime_environ::{
+    RWASM_FRAMES_SECTION, RwasmSnippetFrames, RwasmStackCounters, RwasmStackLimits,
+    rwasm_snippet_frames,
+};
 
 // Only for use in `bindgen!`-generated code.
 #[doc(hidden)]

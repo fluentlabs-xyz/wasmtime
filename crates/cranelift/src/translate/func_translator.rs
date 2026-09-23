@@ -320,6 +320,7 @@ fn validate_op_and_get_operand_types<'a>(
         Some(&operand_types[..])
     });
 
+    environ.rwasm_record_operand_slots(validator, op);
     validator.op(pos, &op)?;
 
     Ok(operand_types)

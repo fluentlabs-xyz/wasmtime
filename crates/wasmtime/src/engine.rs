@@ -140,6 +140,7 @@ impl Engine {
         }
         if let Some(compiler) = compiler.as_mut() {
             compiler.set_rwasm_bulk_fuel(config.rwasm_bulk_fuel);
+            compiler.set_rwasm_stack_limits(config.rwasm_stack_limits);
         }
 
         #[cfg(feature = "runtime")]

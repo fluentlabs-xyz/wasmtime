@@ -192,10 +192,16 @@ pub trait PtrSize {
         self.vmstore_context_epoch_deadline() + 8
     }
 
+    /// Return the offset of the `rwasm_stack` field of `VMStoreContext`
+    #[inline]
+    fn vmstore_context_rwasm_stack(&self) -> u8 {
+        self.vmstore_context_execution_version() + 8
+    }
+
     /// Return the offset of the `stack_limit` field of `VMStoreContext`
     #[inline]
     fn vmstore_context_stack_limit(&self) -> u8 {
-        self.vmstore_context_execution_version() + 8
+        self.vmstore_context_rwasm_stack() + 8
     }
 
     /// Return the offset of the `gc_heap` field of `VMStoreContext`.

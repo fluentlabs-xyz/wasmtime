@@ -118,6 +118,10 @@ pub struct ModuleTranslation<'data> {
     /// segment counts as empty, as it does for rwasm.
     pub rwasm_elem_segment_lengths: Vec<u32>,
 
+    /// The `rwasm.frames` custom section, when the module carries one: the frame height of
+    /// every function, see [`crate::RWASM_FRAMES_SECTION`].
+    pub rwasm_frames: Option<&'data [u8]>,
+
     /// When we're parsing the code section this will be incremented so we know
     /// which function is currently being defined.
     code_index: u32,
@@ -128,6 +132,36 @@ pub struct ModuleTranslation<'data> {
 }
 
 impl<'data> ModuleTranslation<'data> {
+    /// The frame height the rwasm compiler recorded for `func_index` in the module's
+    /// [`crate::RWASM_FRAMES_SECTION`]: the function's `StackCheck`, its locals plus its operand
+    /// peak in value-stack slots.
+    ///
+    /// Fails when the section is missing or does not cover every function of the module: the
+    /// engine enforces the rwasm stack limits, and an unchecked function would run past them.
+    pub fn rwasm_frame_height(&self, func_index: FuncIndex) -> Result<u32, String> {
+        let Some(frames) = self.rwasm_frames else {
+            return Err(format!(
+                "the `{}` custom section is missing, but the engine enforces the rwasm stack \
+                 limits",
+                crate::RWASM_FRAMES_SECTION
+            ));
+        };
+        let functions = self.module.functions.len();
+        if frames.len() != functions * 4 {
+            return Err(format!(
+                "the `{}` custom section holds {} bytes, expected 4 per function for {} functions",
+                crate::RWASM_FRAMES_SECTION,
+                frames.len(),
+                functions
+            ));
+        }
+        let offset = func_index.as_u32() as usize * 4;
+        let bytes = frames[offset..offset + 4]
+            .try_into()
+            .expect("the section covers every function");
+        Ok(u32::from_le_bytes(bytes))
+    }
+
     /// Create a new translation for the module with the given index.
     pub fn new(module_index: StaticModuleIndex) -> Self {
         Self {
@@ -146,6 +180,7 @@ impl<'data> ModuleTranslation<'data> {
             total_passive_data: 0,
             rwasm_data_segment_lengths: Vec::default(),
             rwasm_elem_segment_lengths: Vec::default(),
+            rwasm_frames: None,
             code_index: 0,
             types: None,
         }
@@ -747,6 +782,10 @@ and for re-adding support for interface types you can see this issue:
     https://github.com/bytecodealliance/wasmtime/issues/677
 "
                 )
+            }
+
+            Payload::CustomSection(s) if s.name() == crate::RWASM_FRAMES_SECTION => {
+                self.result.rwasm_frames = Some(s.data());
             }
 
             Payload::CustomSection(s) => {

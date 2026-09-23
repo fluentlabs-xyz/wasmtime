@@ -1197,6 +1197,14 @@ pub struct VMStoreContext {
     /// This field is in use only if guest debugging is enabled.
     pub execution_version: u64,
 
+    /// The rwasm stack counters of the running function, packed into one word so that a call
+    /// site publishes both with one store: the high 32 bits hold the frames the rwasm VM would
+    /// have on its call stack, the low 32 bits the value-stack slots below the function's
+    /// parameters (see [`wasmtime_environ::RwasmStackCounters`]). Maintained by compiled code
+    /// when the engine enforces [`wasmtime_environ::RwasmStackLimits`]; zero for the function
+    /// the host called.
+    pub rwasm_stack: UnsafeCell<u64>,
+
     /// Current stack limit of the wasm module.
     ///
     /// For more information see `crates/cranelift/src/lib.rs`.
@@ -1363,6 +1371,7 @@ impl Default for VMStoreContext {
             fuel_consumed: UnsafeCell::new(0),
             epoch_deadline: UnsafeCell::new(0),
             execution_version: 0,
+            rwasm_stack: UnsafeCell::new(0),
             stack_limit: UnsafeCell::new(usize::max_value()),
             gc_heap: VMMemoryDefinition {
                 base: NonNull::dangling().into(),
@@ -1406,6 +1415,10 @@ mod test_vmstore_context {
         assert_eq!(
             offset_of!(VMStoreContext, execution_version),
             usize::from(offsets.ptr.vmstore_context_execution_version())
+        );
+        assert_eq!(
+            offset_of!(VMStoreContext, rwasm_stack),
+            usize::from(offsets.ptr.vmstore_context_rwasm_stack())
         );
         assert_eq!(
             offset_of!(VMStoreContext, gc_heap),

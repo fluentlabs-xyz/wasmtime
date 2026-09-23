@@ -2171,6 +2171,15 @@ impl<T> Caller<'_, T> {
         self.store.get_fuel()
     }
 
+    /// Returns the rwasm stack counters of the store as the calling function published them:
+    /// the call depth and the frame base of this host function.
+    ///
+    /// For more information see
+    /// [`Store::rwasm_stack_counters`](crate::Store::rwasm_stack_counters)
+    pub fn rwasm_stack_counters(&self) -> wasmtime_environ::RwasmStackCounters {
+        self.store.rwasm_stack_counters()
+    }
+
     /// Set the amount of fuel in this store to be consumed when executing wasm code.
     ///
     /// For more information see [`Store::set_fuel`](crate::Store::set_fuel)

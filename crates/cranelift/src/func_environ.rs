@@ -3,6 +3,7 @@ pub(crate) mod stack_switching;
 
 use crate::BuiltinFunctionSignatures;
 use crate::compiler::Compiler;
+use crate::compiler::rwasm_value_slots;
 use crate::rwasm_fuel;
 use crate::translate::{
     FuncTranslationStacks, GlobalVariable, Heap, HeapData, MemoryKind, StructFieldsVec, TableData,
@@ -29,9 +30,10 @@ use wasmtime_environ::{
     BuiltinFunctionIndex, ComponentPC, DataIndex, DefinedFuncIndex, ElemIndex,
     EngineOrModuleTypeIndex, FrameStateSlotBuilder, FrameValType, FuncIndex, FuncKey,
     GlobalConstValue, GlobalIndex, IndexType, Memory, MemoryIndex, MemoryTunables, Module,
-    ModuleInternedTypeIndex, ModuleTranslation, ModuleTypesBuilder, PtrSize, Table, TableIndex,
-    TagIndex, Tunables, TypeConvert, TypeIndex, VMOffsets, WasmCompositeInnerType, WasmFuncType,
-    WasmHeapTopType, WasmHeapType, WasmRefType, WasmResult, WasmValType,
+    ModuleInternedTypeIndex, ModuleTranslation, ModuleTypesBuilder, PtrSize, RwasmStackLimits,
+    Table, TableIndex, TagIndex, Tunables, TypeConvert, TypeIndex, VMOffsets,
+    WasmCompositeInnerType, WasmFuncType, WasmHeapTopType, WasmHeapType, WasmRefType, WasmResult,
+    WasmValType, rwasm_snippet_frames,
 };
 use wasmtime_environ::{FUNCREF_INIT_BIT, FUNCREF_MASK};
 
@@ -241,6 +243,39 @@ pub struct FuncEnvironment<'module_environment> {
     /// nonlinear control flow). This is useful in cases where we need
     /// to e.g. record the return-address of a callsite for debuginfo.
     pub(crate) next_srcloc: ir::SourceLoc,
+
+    /// The frame of this function on the rwasm value stack, present when the engine enforces
+    /// [`RwasmStackLimits`]. See [`Self::rwasm_stack_function_entry`].
+    rwasm_frame: Option<RwasmFrame>,
+
+    /// Value-stack slots of the operands below the operator about to be translated, recorded by
+    /// [`Self::rwasm_record_operand_slots`] for the operators the rwasm emulation instruments.
+    rwasm_operand_slots: u32,
+
+    /// The frame base of the callee of the call about to be translated, relative to this
+    /// function's base; recorded by [`Self::rwasm_stack_before_op`] and consumed by [`Call`].
+    rwasm_call_site: Option<u32>,
+}
+
+/// The frame of the function being translated, the way the rwasm VM lays it out on its value
+/// stack, together with the store counters its prologue loads.
+#[derive(Debug, Clone, Copy)]
+struct RwasmFrame {
+    limits: RwasmStackLimits,
+    /// Slots of the parameters, pushed by the caller.
+    params_slots: u32,
+    /// Slots of the declared locals.
+    locals_slots: u32,
+    /// The function's `StackCheck` on rwasm: its locals plus its operand peak, from the module's
+    /// `rwasm.frames` section.
+    frame_height: u32,
+    /// The packed rwasm stack counters while this function runs (`RwasmStackCounters::pack`:
+    /// the call depth in the high half, the frame base in the low half), loaded in the
+    /// prologue.
+    counters: ir::Value,
+    /// The rwasm frame base: the value-stack slots below the parameters, the low half of
+    /// `counters`.
+    base: ir::Value,
 }
 
 impl<'module_environment> FuncEnvironment<'module_environment> {
@@ -301,7 +336,178 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
             state_slot: None,
             next_srcloc: ir::SourceLoc::default(),
             wasm_module_offset: translation.wasm_module_offset,
+            rwasm_frame: None,
+            rwasm_operand_slots: 0,
+            rwasm_call_site: None,
         }
+    }
+
+    /// Enables the rwasm stack emulation for this function; see [`RwasmStackLimits`].
+    pub(crate) fn set_rwasm_frame(
+        &mut self,
+        limits: RwasmStackLimits,
+        params_slots: u32,
+        locals_slots: u32,
+        frame_height: u32,
+    ) {
+        self.rwasm_frame = Some(RwasmFrame {
+            limits,
+            params_slots,
+            locals_slots,
+            frame_height,
+            counters: ir::Value::reserved_value(),
+            base: ir::Value::reserved_value(),
+        });
+    }
+
+    /// Records the value-stack slots of the operand stack before `op` runs, when `op` is one
+    /// the rwasm stack emulation instruments. Called with the validator still ahead of `op`.
+    pub(crate) fn rwasm_record_operand_slots(
+        &mut self,
+        validator: &FuncValidator<impl WasmModuleResources>,
+        op: &Operator<'_>,
+    ) {
+        let Some(frame) = self.rwasm_frame else {
+            return;
+        };
+        if !self.is_reachable() {
+            return;
+        }
+        let is_call = matches!(
+            op,
+            Operator::Call { .. } | Operator::CallIndirect { .. } | Operator::CallRef { .. }
+        );
+        if !is_call && !(frame.limits.code_snippets && rwasm_snippet_frames(op).is_some()) {
+            return;
+        }
+        let mut slots = 0u32;
+        for depth in 0..validator.operand_stack_height() as usize {
+            let ty = validator.get_operand_type(depth).flatten();
+            // Reachable code never carries a bottom type; count it as one slot regardless.
+            debug_assert!(
+                ty.is_some(),
+                "bottom type on the operand stack of reachable code"
+            );
+            let width = ty
+                .and_then(|ty| self.convert_valtype(ty).ok())
+                .map_or(1, rwasm_value_slots);
+            slots = slots.saturating_add(width);
+        }
+        self.rwasm_operand_slots = slots;
+    }
+
+    /// Loads the rwasm stack counters and performs this function's `StackCheck`: its frame base
+    /// plus its parameters and its recorded height must fit the value-stack window.
+    fn rwasm_stack_function_entry(&mut self, builder: &mut FunctionBuilder<'_>) {
+        let Some(mut frame) = self.rwasm_frame else {
+            return;
+        };
+        let store = self.get_vmstore_context_ptr(builder);
+        frame.counters = builder.ins().load(
+            I64,
+            ir::MemFlags::trusted(),
+            store,
+            i32::from(self.offsets.ptr.vmstore_context_rwasm_stack()),
+        );
+        frame.base = builder.ins().ireduce(I32, frame.counters);
+        self.rwasm_frame = Some(frame);
+        let need = u64::from(frame.params_slots) + u64::from(frame.frame_height);
+        self.rwasm_check_stack_slots(builder, frame.base, need, frame.limits.max_stack_slots);
+    }
+
+    /// Instruments `op` for the rwasm stack emulation, after its fuel was charged.
+    ///
+    /// A call records where the callee's frame starts: this function's parameters, locals and
+    /// the operands below the arguments (`operand_types`, which for `call_indirect` and
+    /// `call_ref` include the callee operand rwasm pops first). An `i64` operator that rwasm
+    /// runs in a hidden snippet frame checks that frame here, before the operator's own traps.
+    fn rwasm_stack_before_op(
+        &mut self,
+        op: &Operator<'_>,
+        operand_types: Option<&[WasmValType]>,
+        builder: &mut FunctionBuilder<'_>,
+    ) {
+        let Some(frame) = self.rwasm_frame else {
+            return;
+        };
+        if !self.is_reachable() {
+            return;
+        }
+        let below_operands = frame
+            .params_slots
+            .saturating_add(frame.locals_slots)
+            .saturating_add(self.rwasm_operand_slots);
+        match op {
+            Operator::Call { .. } | Operator::CallIndirect { .. } | Operator::CallRef { .. } => {
+                let taken = operand_types
+                    .expect("reachable calls have operand types")
+                    .iter()
+                    .map(|ty| rwasm_value_slots(*ty))
+                    .fold(0u32, u32::saturating_add);
+                self.rwasm_call_site = Some(below_operands.saturating_sub(taken));
+            }
+            _ if frame.limits.code_snippets => {
+                let Some(snippet) = rwasm_snippet_frames(op) else {
+                    return;
+                };
+                self.rwasm_check_call_depth(
+                    builder,
+                    frame.counters,
+                    snippet.frames,
+                    frame.limits.max_call_depth,
+                );
+                let need = u64::from(below_operands) + u64::from(snippet.max_stack_height);
+                self.rwasm_check_stack_slots(
+                    builder,
+                    frame.base,
+                    need,
+                    frame.limits.max_stack_slots,
+                );
+            }
+            _ => {}
+        }
+    }
+
+    /// Traps `StackOverflow` unless `base + need` fits `max_stack_slots`, like
+    /// `ValueStack::reserve` behind rwasm's `StackCheck`: one compare of the frame base against
+    /// the room the frame leaves, or an unconditional trap for a frame larger than the window.
+    fn rwasm_check_stack_slots(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        base: ir::Value,
+        need: u64,
+        max_stack_slots: u32,
+    ) {
+        let over = match u64::from(max_stack_slots).checked_sub(need) {
+            Some(room) => {
+                builder
+                    .ins()
+                    .icmp_imm(IntCC::UnsignedGreaterThan, base, Imm64::new(room as i64))
+            }
+            None => builder.ins().iconst(I8, 1),
+        };
+        self.trapnz(builder, over, ir::TrapCode::STACK_OVERFLOW);
+    }
+
+    /// Traps `StackOverflow` when pushing `frames` more frames would exceed `max_call_depth`:
+    /// rwasm refuses a `CallInternal` once that many frames are on its call stack, so the last
+    /// of the frames needs `depth + frames - 1 < max_call_depth`. The depth is the high half
+    /// of the packed `counters`, so the check is one compare of the whole word against the
+    /// limit shifted into that half.
+    fn rwasm_check_call_depth(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        counters: ir::Value,
+        frames: u32,
+        max_call_depth: u32,
+    ) {
+        let room = max_call_depth.saturating_sub(frames.saturating_sub(1));
+        let over = builder.ins().icmp_imm(
+            IntCC::UnsignedGreaterThanOrEqual,
+            counters,
+            Imm64::new((i64::from(room)) << 32),
+        );
+        self.trapnz(builder, over, ir::TrapCode::STACK_OVERFLOW);
     }
 
     pub(crate) fn pointer_type(&self) -> ir::Type {
@@ -558,7 +764,12 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
     ) {
         use wasmtime_environ::{DataIndex, ElemIndex};
 
-        fn words(builder: &mut FunctionBuilder<'_>, n: ir::Value, add: i64, shift: i64) -> ir::Value {
+        fn words(
+            builder: &mut FunctionBuilder<'_>,
+            n: ir::Value,
+            add: i64,
+            shift: i64,
+        ) -> ir::Value {
             let rounded = builder.ins().iadd_imm(n, Imm64::new(add));
             let words = builder.ins().ushr_imm(rounded, Imm64::new(shift));
             builder.ins().uextend(ir::types::I64, words)
@@ -643,9 +854,10 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
                     .ins()
                     .icmp_imm(IntCC::UnsignedGreaterThan, n, limit_imm);
                 let sum = builder.ins().iadd(size, n);
-                let over_with_size = builder
-                    .ins()
-                    .icmp_imm(IntCC::UnsignedGreaterThan, sum, limit_imm);
+                let over_with_size =
+                    builder
+                        .ins()
+                        .icmp_imm(IntCC::UnsignedGreaterThan, sum, limit_imm);
                 let skip = builder.ins().bor(over, over_with_size);
                 let fuel = words(builder, n, TABLE.0, TABLE.1);
                 self.rwasm_bulk_charge_unless(builder, skip, fuel);
@@ -666,13 +878,13 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
         let operands = self.stacks.peekn(3);
         let (s, n) = (operands[1], operands[2]);
         let len_imm = Imm64::new(i64::from(len));
-        let s_over = builder.ins().icmp_imm(IntCC::UnsignedGreaterThan, s, len_imm);
+        let s_over = builder
+            .ins()
+            .icmp_imm(IntCC::UnsignedGreaterThan, s, len_imm);
         self.trapnz(builder, s_over, trap);
         let len_value = builder.ins().iconst(ir::types::I32, len_imm);
         let remaining = builder.ins().isub(len_value, s);
-        let n_over = builder
-            .ins()
-            .icmp(IntCC::UnsignedLessThan, remaining, n);
+        let n_over = builder.ins().icmp(IntCC::UnsignedLessThan, remaining, n);
         self.trapnz(builder, n_over, trap);
         let rounded = builder.ins().iadd_imm(n, Imm64::new(add));
         let words = builder.ins().ushr_imm(rounded, Imm64::new(shift));
@@ -2058,6 +2270,7 @@ impl<'a, 'func, 'module_env> Call<'a, 'func, 'module_env> {
         sig_ref: ir::SigRef,
         wasm_call_args: &[ir::Value],
     ) -> WasmResult<CallRets> {
+        self.rwasm_stack_push();
         let mut real_call_args = Vec::with_capacity(wasm_call_args.len() + 2);
         let caller_vmctx = self
             .builder
@@ -2174,6 +2387,7 @@ impl<'a, 'func, 'module_env> Call<'a, 'func, 'module_env> {
             Some(pair) => pair,
             None => return Ok(None),
         };
+        self.rwasm_stack_push();
 
         self.unchecked_call_impl(sig_ref, code_ptr, callee_vmctx, call_args)
             .map(Some)
@@ -2195,7 +2409,10 @@ impl<'a, 'func, 'module_env> Call<'a, 'func, 'module_env> {
             cold_blocks,
         );
 
-        // If necessary, check the signature.
+        // If necessary, check the signature. The rwasm VM refuses a null entry before it pushes
+        // the frame and checks the signature in the callee's prologue, so its call-depth trap
+        // sits between the two: the runtime check below pushes the frame right after the load
+        // that traps on null, the static cases push it here.
         let check =
             self.check_indirect_call_type_signature(features, table_index, ty_index, funcref_ptr);
 
@@ -2407,6 +2624,13 @@ impl<'a, 'func, 'module_env> Call<'a, 'func, 'module_env> {
         callee_load_trap_code: Option<ir::TrapCode>,
         call_args: &[ir::Value],
     ) -> WasmResult<CallRets> {
+        // As for `call_indirect`: rwasm rejects a null reference before it pushes the frame.
+        if self.env.rwasm_frame.is_some() && !self.tail {
+            if let Some(trap) = callee_load_trap_code {
+                self.env.trapz(self.builder, callee, trap);
+            }
+            self.rwasm_stack_push();
+        }
         let (func_addr, callee_vmctx) = self.load_code_and_vmctx(callee, callee_load_trap_code);
         self.unchecked_call_impl(sig_ref, func_addr, callee_vmctx, call_args)
     }
@@ -2595,6 +2819,46 @@ impl<'a, 'func, 'module_env> Call<'a, 'func, 'module_env> {
             self.attach_tags(inst);
             results
         }
+    }
+
+    /// Emulates rwasm's `CallInternal` for a non-tail call: traps `StackOverflow` when the call
+    /// stack is full, then publishes the callee's depth and frame base (recorded by
+    /// `FuncEnvironment::rwasm_stack_before_op`) to the store. A tail call keeps the caller's
+    /// counters, like `ReturnCallInternal`.
+    ///
+    /// Nothing is restored after the call: every reader of the counters, a callee's prologue or
+    /// a host function, runs right after the call site that wrote them, and the caller keeps
+    /// its own depth and base in SSA values loaded in its prologue.
+    fn rwasm_stack_push(&mut self) {
+        let Some(frame) = self.env.rwasm_frame else {
+            return;
+        };
+        if self.tail {
+            return;
+        }
+        let base_delta = self
+            .env
+            .rwasm_call_site
+            .take()
+            .expect("the call site's frame base is recorded before the call is translated");
+        self.env.rwasm_check_call_depth(
+            self.builder,
+            frame.counters,
+            1,
+            frame.limits.max_call_depth,
+        );
+        // one frame more in the high half, the callee's base in the low half
+        let callee = self
+            .builder
+            .ins()
+            .iadd_imm(frame.counters, (1i64 << 32) | i64::from(base_delta));
+        let store = self.env.get_vmstore_context_ptr(self.builder);
+        self.builder.ins().store(
+            ir::MemFlags::trusted(),
+            callee,
+            store,
+            i32::from(self.env.offsets.ptr.vmstore_context_rwasm_stack()),
+        );
     }
 
     fn attach_tags(&mut self, inst: ir::Inst) {
@@ -3897,12 +4161,13 @@ impl FuncEnvironment<'_> {
     pub fn before_translate_operator(
         &mut self,
         op: &Operator,
-        _operand_types: Option<&[WasmValType]>,
+        operand_types: Option<&[WasmValType]>,
         builder: &mut FunctionBuilder,
     ) -> WasmResult<()> {
         if self.tunables.consume_fuel {
             self.fuel_before_op(op, builder);
         }
+        self.rwasm_stack_before_op(op, operand_types, builder);
         if self.is_reachable() && self.state_slot.is_some() {
             let builtin = self.builtin_functions.patchable_breakpoint(builder.func);
             let vmctx = self.vmctx_val(&mut builder.cursor());
@@ -3953,6 +4218,9 @@ impl FuncEnvironment<'_> {
         if self.tunables.consume_fuel {
             self.fuel_function_entry(builder);
         }
+
+        // The rwasm `StackCheck` follows the function's entry fuel charge, as on rwasm.
+        self.rwasm_stack_function_entry(builder);
 
         // Initialize `epoch_var` with the current epoch.
         if self.tunables.epoch_interruption {
