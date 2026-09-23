@@ -645,6 +645,10 @@ impl Config {
     /// guards of the rwasm translator's `consume_fuel_for_bulk_ops`, so a module burns the same
     /// fuel on both engines under that option. Without it every bulk operation costs a flat
     /// entity cost, which a guest can turn into gigabytes of `memset` per fuel unit.
+    ///
+    /// The setting is part of the engine's compatibility hash, so cached code is only reused
+    /// under the same setting, and precompiled artifacts load only into an engine configured
+    /// with the same setting.
     pub fn rwasm_bulk_fuel(
         &mut self,
         bulk_fuel: Option<wasmtime_environ::RwasmBulkFuel>,

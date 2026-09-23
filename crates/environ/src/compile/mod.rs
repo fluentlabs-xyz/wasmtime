@@ -477,7 +477,13 @@ pub trait Compiler: Send + Sync {
 /// same fuel: a `memory.grow` or `table.grow` that rwasm short-circuits to `-1` at its guard is
 /// not charged, and the guard compares against these limits (the smaller of the declared maximum
 /// and the limit).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// The setting changes the generated code, so it is part of the engine's compatibility hash
+/// (the cache key and `Engine::precompile_compatibility_hash`) and of a precompiled artifact's
+/// metadata.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde_derive::Serialize, serde_derive::Deserialize,
+)]
 pub struct RwasmBulkFuel {
     /// `CompilationConfig::max_allowed_memory_pages` of the rwasm compiler.
     pub max_memory_pages: u32,
