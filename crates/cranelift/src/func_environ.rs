@@ -2624,10 +2624,13 @@ impl<'a, 'func, 'module_env> Call<'a, 'func, 'module_env> {
         callee_load_trap_code: Option<ir::TrapCode>,
         call_args: &[ir::Value],
     ) -> WasmResult<CallRets> {
-        // As for `call_indirect`: rwasm rejects a null reference before it pushes the frame.
-        if self.env.rwasm_frame.is_some() && !self.tail {
-            if let Some(trap) = callee_load_trap_code {
-                self.env.trapz(self.builder, callee, trap);
+        // As for `call_indirect`: rwasm rejects a null reference before it pushes the frame. A
+        // tail call publishes this function's own counters instead (see `rwasm_stack_push`).
+        if self.env.rwasm_frame.is_some() {
+            if !self.tail {
+                if let Some(trap) = callee_load_trap_code {
+                    self.env.trapz(self.builder, callee, trap);
+                }
             }
             self.rwasm_stack_push();
         }
@@ -2823,17 +2826,26 @@ impl<'a, 'func, 'module_env> Call<'a, 'func, 'module_env> {
 
     /// Emulates rwasm's `CallInternal` for a non-tail call: traps `StackOverflow` when the call
     /// stack is full, then publishes the callee's depth and frame base (recorded by
-    /// `FuncEnvironment::rwasm_stack_before_op`) to the store. A tail call keeps the caller's
-    /// counters, like `ReturnCallInternal`.
+    /// `FuncEnvironment::rwasm_stack_before_op`) to the store. A tail call replaces this frame,
+    /// like `ReturnCallInternal`, so it publishes this function's own counters instead.
     ///
-    /// Nothing is restored after the call: every reader of the counters, a callee's prologue or
-    /// a host function, runs right after the call site that wrote them, and the caller keeps
-    /// its own depth and base in SSA values loaded in its prologue.
+    /// Nothing is restored after a non-tail call returns: the caller keeps its own depth and
+    /// base in SSA values loaded in its prologue, and every later reader of the store, a
+    /// callee's prologue or a host function, runs right after a call site that wrote it. That
+    /// is why a tail call must write: the store may still hold the counters of an earlier
+    /// non-tail call made by this function, and the tail callee's prologue reads the store.
     fn rwasm_stack_push(&mut self) {
         let Some(frame) = self.env.rwasm_frame else {
             return;
         };
         if self.tail {
+            let store = self.env.get_vmstore_context_ptr(self.builder);
+            self.builder.ins().store(
+                ir::MemFlags::trusted(),
+                frame.counters,
+                store,
+                i32::from(self.env.offsets.ptr.vmstore_context_rwasm_stack()),
+            );
             return;
         }
         let base_delta = self
