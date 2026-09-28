@@ -49,6 +49,7 @@ mod pooling_allocator;
 mod profiling;
 mod pulley;
 mod relocs;
+mod rwasm_stack;
 mod stack_creator;
 mod stack_overflow;
 mod store;
